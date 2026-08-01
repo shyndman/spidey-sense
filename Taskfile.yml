@@ -1,0 +1,15 @@
+version: '3'
+
+tasks:
+  image-guard:
+    desc: Watch repository image state and emit JSONL snapshots
+    silent: true
+    preconditions:
+      - sh: command -v inotifywait
+        msg: watch requires inotifywait
+      - sh: command -v file
+        msg: watch requires file
+      - sh: command -v bun
+        msg: watch requires bun
+    cmds:
+      - exec bun .omp/image-guard/watch.ts
