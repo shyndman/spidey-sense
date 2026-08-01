@@ -1,0 +1,40 @@
+[project]
+name = "model-tools"
+version = "0.1.0"
+description = "ONNX model preparation tooling"
+authors = [
+    { name = "Scott Hyndman", email = "scotty.hyndman@gmail.com" },
+]
+requires-python = ">=3.13"
+dependencies = [
+    "libsh>=0.3.1",
+    "onnx>=1.22.0",
+    "onnxruntime>=1.28.0",
+    "pydantic>=2.13.4",
+    "structlog>=26.1.0",
+]
+
+[project.scripts]
+model-tools = "model_tools.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.16,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.39.9",
+    "pytest>=9.1.1",
+    "ruff>=0.16.1",
+]
+
+[tool.ruff]
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "UP"]
+
+[tool.basedpyright]
+pythonVersion = "3.13"
+typeCheckingMode = "strict"
+include = ["src"]

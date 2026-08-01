@@ -1,0 +1,8 @@
+*
+!model-tools/
+!model-tools/pyproject.toml
+!model-tools/uv.lock
+!model-tools/src/
+!model-tools/src/**
+!validation/
+!validation/Dockerfile

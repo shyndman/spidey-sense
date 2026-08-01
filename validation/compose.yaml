@@ -1,0 +1,13 @@
+services:
+  model-tools:
+    build:
+      context: ..
+      dockerfile: validation/Dockerfile
+    network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
