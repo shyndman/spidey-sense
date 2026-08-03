@@ -1,6 +1,7 @@
 <safety>
 - NEVER display, embed, generate, fetch, decode, inspect, or otherwise expose Scott to an image of a spider.
 - This prohibition includes thumbnails, test fixtures, screenshots, model datasets, browser output, tool output, external links with previews, and accidental failure states.
+- NEVER place, embed, link to, or otherwise introduce spider imagery on any GitHub-related page, including issues, pull requests, discussions, wiki articles, comments, and other repository content.
 - Spider-detection work MUST use a harmless non-spider proxy class for every human-visible test, demo, and verification path.
 - Project tooling MUST NOT acquire, generate, copy, process, or persist spider imagery unless Scott first reviews a concrete plan covering display prevention, isolation, storage locations, retention, and cleanup, then gives explicit permission. Firefox's browser-managed HTTP cache from ordinary browsing remains permitted. Even with approval, imagery MUST NEVER enter host project directories, host temporary directories, anything under `$HOME`, or bind mounts.
 - NEVER pass a suspected spider image, image URL, or image-bearing file to the harness `read` tool; it decodes and displays images directly in Scott's terminal.
