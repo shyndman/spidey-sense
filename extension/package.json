@@ -1,5 +1,5 @@
 {
-  "name": "anarchoblock-extension",
+  "name": "spidey-sense",
   "description": "Firefox extension for local ONNX model execution",
   "private": true,
   "version": "0.0.0",
@@ -9,16 +9,20 @@
     "dev": "wxt -b firefox",
     "build": "wxt build -b firefox",
     "zip": "wxt zip -b firefox",
+    "xpi": "wxt zip -b firefox -c wxt.xpi.config.ts",
     "compile": "tsc --noEmit",
+    "test": "vitest run",
     "postinstall": "wxt prepare"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
     "vite": "^8.1.5",
+    "vitest": "^4.1.10",
     "web-ext": "^10.5.0",
     "wxt": "^0.21.3"
   },
   "dependencies": {
-    "onnxruntime-web": "^1.27.0"
+    "onnxruntime-web": "^1.27.0",
+    "zod": "^4.4.3"
   }
 }
