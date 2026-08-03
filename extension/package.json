@@ -10,11 +10,14 @@
     "build": "wxt build -b firefox",
     "zip": "wxt zip -b firefox",
     "xpi": "wxt zip -b firefox -c wxt.xpi.config.ts",
+    "smoke:firefox": "task --dir .. model:acquire && pnpm xpi && node scripts/firefox-model-smoke.ts",
     "compile": "tsc --noEmit",
     "test": "vitest run",
     "postinstall": "wxt prepare"
   },
   "devDependencies": {
+    "@types/selenium-webdriver": "^4.35.6",
+    "selenium-webdriver": "^4.46.0",
     "typescript": "^5.9.3",
     "vite": "^8.1.5",
     "vitest": "^4.1.10",

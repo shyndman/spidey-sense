@@ -1,3 +1,4 @@
+import { readdirSync } from 'node:fs';
 import { copyFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +15,20 @@ const runtimeAssets = [
   { filename: basename(wasmSource), source: wasmSource },
   { filename: basename(wasmModuleSource), source: wasmModuleSource },
 ] as const;
+
+const MODEL_METADATA_SUFFIX = '.metadata.json';
+const publicModelsDirectory = fileURLToPath(
+  new URL('./public/models/', import.meta.url),
+);
+const [modelMetadataFilename, additionalModelMetadataFilename] = readdirSync(
+  publicModelsDirectory,
+).filter((filename) => filename.endsWith(MODEL_METADATA_SUFFIX));
+if (
+  modelMetadataFilename === undefined ||
+  additionalModelMetadataFilename !== undefined
+) {
+  throw new Error('Expected exactly one generated model metadata artifact');
+}
 const [wasmAsset, wasmModuleAsset] = runtimeAssets;
 
 export default defineConfig({
@@ -24,6 +39,9 @@ export default defineConfig({
       ),
       'import.meta.env.WXT_ONNX_WASM_MODULE_FILENAME': JSON.stringify(
         wasmModuleAsset.filename,
+      ),
+      'import.meta.env.WXT_MODEL_METADATA_PATH': JSON.stringify(
+        `models/${modelMetadataFilename}`,
       ),
     },
     resolve: {
