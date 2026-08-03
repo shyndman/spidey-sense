@@ -122,6 +122,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "libsh" },
+    { name = "numpy" },
     { name = "onnx" },
     { name = "onnxruntime" },
     { name = "pydantic" },
@@ -138,6 +139,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "libsh", specifier = ">=0.3.1" },
+    { name = "numpy", specifier = ">=2.5.1" },
     { name = "onnx", specifier = ">=1.22.0" },
     { name = "onnxruntime", specifier = ">=1.28.0" },
     { name = "pydantic", specifier = ">=2.13.4" },

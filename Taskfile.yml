@@ -13,3 +13,12 @@ tasks:
         msg: watch requires bun
     cmds:
       - exec bun .omp/image-guard/watch.ts
+  model:acquire:
+    desc: Acquire and verify the pinned extension model bundle
+    cmds:
+      - uv run --project model-tools model-tools acquire --manifest model-tools/model-source.toml --output-dir extension/public/models
+
+  model:verify:
+    desc: Verify the existing extension model bundle offline
+    cmds:
+      - uv run --project model-tools model-tools verify --manifest model-tools/model-source.toml --bundle-dir extension/public/models
