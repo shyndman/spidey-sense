@@ -6,10 +6,13 @@ import {
   type ImageMimeType,
   selectImageResponse,
 } from "../../src/image/decoding";
+import { transformImageToModelInput } from "../../src/image/preprocessing";
 import { runModelInference } from "../../src/model/inference";
+import type { ModelMetadata } from "../../src/model/metadata";
 import { ModelSessionManager } from "../../src/model/session";
 
 const PROBABILITY_SUM_TOLERANCE = 1e-5;
+const FLOAT_COMPARISON_TOLERANCE = 1e-6;
 const PROXY_WIDTH = 2;
 const PROXY_HEIGHT = 1;
 const FULL_CHANNEL = 255;
@@ -77,29 +80,7 @@ function assertProxyPixels(decoded: DecodedImage): void {
   }
 }
 
-/**
- * Creates harmless solid-color proxy bytes only in browser memory, decodes both
- * native raster and static SVG paths, and proves animation and non-image
- * responses stop before tensor preprocessing. Neither source nor decoded pixels
- * enter the DOM, logs, browser network, or filesystem.
- */
-async function runFirefoxImageDecodeSmoke(): Promise<void> {
-  const png = await decodeImage(
-    await createProxyPngBytes(),
-    requireEligibleImage("image/png"),
-  );
-  assertProxyPixels(png);
-
-  const svg = await decodeImage(
-    new TextEncoder().encode(STATIC_SVG_PROXY),
-    requireEligibleImage("image/svg+xml"),
-  );
-  assertProxyPixels(svg);
-
-  if (selectImageResponse("application/octet-stream").kind !== "ineligible") {
-    throw new Error("Non-image response entered the decoding pipeline");
-  }
-
+async function assertAnimatedSvgRejected(): Promise<void> {
   try {
     await decodeImage(
       new TextEncoder().encode(ANIMATED_SVG_PROXY),
@@ -117,6 +98,73 @@ async function runFirefoxImageDecodeSmoke(): Promise<void> {
   throw new Error("Animated image entered the decoding pipeline");
 }
 
+/**
+ * Creates harmless solid-color proxy bytes only in browser memory, decodes both
+ * native raster and static SVG paths, and proves animation and non-image
+ * responses stop before tensor preprocessing. Neither source nor decoded pixels
+ * enter the DOM, logs, browser network, or filesystem.
+ */
+async function runFirefoxImageDecodeSmoke(): Promise<DecodedImage> {
+  const png = await decodeImage(
+    await createProxyPngBytes(),
+    requireEligibleImage("image/png"),
+  );
+  assertProxyPixels(png);
+
+  const svg = await decodeImage(
+    new TextEncoder().encode(STATIC_SVG_PROXY),
+    requireEligibleImage("image/svg+xml"),
+  );
+  assertProxyPixels(svg);
+
+  if (selectImageResponse("application/octet-stream").kind !== "ineligible") {
+    throw new Error("Non-image response entered the decoding pipeline");
+  }
+
+  await assertAnimatedSvgRejected();
+  return png;
+}
+
+async function assertBlackTransparency(
+  metadata: ModelMetadata,
+): Promise<void> {
+  const transparentWhite: DecodedImage = {
+    width: 1,
+    height: 1,
+    data: new Uint8ClampedArray([
+      FULL_CHANNEL,
+      FULL_CHANNEL,
+      FULL_CHANNEL,
+      EMPTY_CHANNEL,
+    ]),
+    channelOrder: "RGBA",
+    colorSpace: "srgb",
+    alphaMode: "unpremultiplied",
+  };
+  const input = await transformImageToModelInput(transparentWhite, metadata);
+  const [, channels, height, width] = metadata.input.shape;
+  const channelPlaneLength = height * width;
+  if (input.length !== channels * channelPlaneLength) {
+    throw new Error("Preprocessed proxy has the wrong tensor length");
+  }
+
+  for (let channel = 0; channel < channels; channel += 1) {
+    const expected =
+      -metadata.input.mean[channel]! /
+      metadata.input.standardDeviation[channel]!;
+    const planeEnd = (channel + 1) * channelPlaneLength;
+    for (
+      let inputIndex = channel * channelPlaneLength;
+      inputIndex < planeEnd;
+      inputIndex += 1
+    ) {
+      if (Math.abs(input[inputIndex]! - expected) > FLOAT_COMPARISON_TOLERANCE) {
+        throw new Error("Transparent proxy was not composited against black");
+      }
+    }
+  }
+}
+
 const SmokeStatus = {
   PASSED: "passed",
   FAILED: "failed",
@@ -125,23 +173,23 @@ const SmokeStatus = {
 type SmokeStatus = (typeof SmokeStatus)[keyof typeof SmokeStatus];
 
 /**
- * Exercises the exact packaged metadata, model, and ONNX Runtime assets from a
- * real Firefox extension context. The numeric input is an all-zero synthetic
- * tensor—not an encoded, decoded, or preprocessed image—so this page can prove
- * runtime initialization and inference without acquiring or persisting imagery.
- * The page is unlisted and has no manifest or product UI route; WebDriver opens
- * its internal extension URL directly during the explicit smoke command.
+ * Exercises the exact packaged metadata, model, ONNX Runtime, and antialiased
+ * resize assets from a real Firefox extension context. A harmless decoded proxy
+ * is transformed through metadata-driven resize, center crop, black alpha
+ * compositing, normalization, NCHW layout, and one real inference. The page is
+ * unlisted and handles every proxy only in memory; WebDriver opens its internal
+ * extension URL directly during the explicit smoke command.
  */
-async function runFirefoxModelSmoke(): Promise<void> {
+async function runFirefoxModelSmoke(decoded: DecodedImage): Promise<void> {
   const metadataUrl = new URL(
     import.meta.env.WXT_MODEL_METADATA_PATH,
     globalThis.location.href,
   );
   const manager = new ModelSessionManager(metadataUrl);
   const { metadata, session } = await manager.initialize();
-  const [, channels, height, width] = metadata.input.shape;
-  const syntheticInput = new Float32Array(channels * height * width);
-  const result = await runModelInference(session, metadata, syntheticInput);
+  const input = await transformImageToModelInput(decoded, metadata);
+  await assertBlackTransparency(metadata);
+  const result = await runModelInference(session, metadata, input);
 
   if (result.probabilities.length !== metadata.output.shape[1]) {
     throw new Error("Smoke output length does not match generated metadata");
@@ -160,8 +208,8 @@ async function runFirefoxModelSmoke(): Promise<void> {
 }
 
 async function runFirefoxExtensionSmoke(): Promise<void> {
-  await runFirefoxImageDecodeSmoke();
-  await runFirefoxModelSmoke();
+  const decoded = await runFirefoxImageDecodeSmoke();
+  await runFirefoxModelSmoke(decoded);
 }
 
 function publishStatus(status: SmokeStatus): void {

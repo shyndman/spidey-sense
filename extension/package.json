@@ -25,6 +25,7 @@
     "wxt": "^0.21.3"
   },
   "dependencies": {
+    "@jsquash/resize": "2.1.1",
     "onnxruntime-web": "^1.27.0",
     "zod": "^4.4.3"
   }
