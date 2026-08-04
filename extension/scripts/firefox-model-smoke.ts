@@ -81,11 +81,12 @@ async function resolveExtensionUuid(
 /**
  * Installs the exact production XPI into the workstation's Firefox Developer
  * Edition, disables browser networking before installation, and opens the
- * package's otherwise-unlisted smoke page. The page drives one real inference
- * from a synthetic numeric tensor and publishes only a stable pass/fail marker;
- * WebDriver never captures screenshots or handles image input or artifacts.
+ * package's otherwise-unlisted smoke page. The page drives one real model
+ * inference plus native decoding of harmless, in-memory proxy bytes, publishing
+ * only a stable pass/fail marker. WebDriver never captures screenshots or
+ * handles image input or artifacts.
  */
-async function runFirefoxModelSmoke(): Promise<void> {
+async function runFirefoxExtensionSmoke(): Promise<void> {
   const xpiPath = await findProductionXpi();
   //! HACK: Firefox 138+ denies WebDriver's privileged chrome context unless
   //! GeckoDriver starts it with explicit system access. The harness uses that
@@ -118,14 +119,14 @@ async function runFirefoxModelSmoke(): Promise<void> {
         : false;
     }, SMOKE_TIMEOUT_MILLISECONDS);
 
-    assert.equal(status, "passed", "Firefox model runtime smoke test failed");
-    console.info("Firefox model runtime smoke test passed");
+    assert.equal(status, "passed", "Firefox extension smoke test failed");
+    console.info("Firefox extension smoke test passed");
   } finally {
     await driver.quit();
   }
 }
 
-void runFirefoxModelSmoke().catch((cause: unknown) => {
-  console.error("Firefox model runtime smoke test failed", cause);
+void runFirefoxExtensionSmoke().catch((cause: unknown) => {
+  console.error("Firefox extension smoke test failed", cause);
   process.exitCode = 1;
 });
