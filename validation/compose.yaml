@@ -1,13 +1,21 @@
 services:
-  model-tools:
+  # The evaluator writes all runtime state to the persistent named volume.
+  evaluator:
     build:
       context: ..
       dockerfile: validation/Dockerfile
-    network_mode: none
-    read_only: true
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=64m
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
+    command: ["all"]
+    environment:
+      CUDA_VISIBLE_DEVICES: ""
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      TOKENIZERS_PARALLELISM: "false"
+    volumes:
+      - spidey-sense-evaluation-data:/data
+
+volumes:
+  # An explicit name avoids project-name prefixes and keeps this volume stable.
+  spidey-sense-evaluation-data:
+    name: spidey-sense-evaluation-data

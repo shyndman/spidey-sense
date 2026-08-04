@@ -3,6 +3,15 @@
 !model-tools/pyproject.toml
 !model-tools/uv.lock
 !model-tools/src/
+!model-tools/model-source.toml
+!extension/
+!extension/package.json
+!extension/pnpm-lock.yaml
+!extension/src/
+!extension/src/**
+!extension/scripts/
+!extension/scripts/**
+!validation/compose.yaml
 !model-tools/src/**
 !validation/
 !validation/Dockerfile

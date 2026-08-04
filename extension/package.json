@@ -17,7 +17,10 @@
   },
   "devDependencies": {
     "@types/selenium-webdriver": "^4.35.6",
+    "onnxruntime-node": "^1.27.0",
     "selenium-webdriver": "^4.46.0",
+    "sharp": "^0.35.3",
+    "tsx": "^4.23.5",
     "typescript": "^5.9.3",
     "vite": "^8.1.5",
     "vitest": "^4.1.10",

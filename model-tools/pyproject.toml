@@ -7,16 +7,30 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "ImageHash>=4.3.2",
+    "Pillow>=12.0.0",
+    "httpx>=0.28.1",
     "libsh>=0.3.1",
     "numpy>=2.5.1",
     "onnx>=1.22.0",
     "onnxruntime>=1.28.0",
     "pydantic>=2.13.4",
     "structlog>=26.1.0",
+    "torch>=2.7.1",
+    "transformers>=4.52.4",
 ]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [project.scripts]
 model-tools = "model_tools.cli:main"
+model-tools-evaluation = "model_tools.evaluation.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.11.16,<0.12.0"]
