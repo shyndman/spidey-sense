@@ -137,7 +137,7 @@ describe("selectImageResponse", () => {
 
 describe("decodeImage", () => {
   it("returns unpremultiplied RGBA8 sRGB pixels and releases decoder resources", async () => {
-    vi.spyOn(console, "debug").mockImplementation(() => undefined);
+    const debugLog = vi.spyOn(console, "debug").mockImplementation(() => undefined);
     const browser = installBrowserStubs();
 
     const decoded = await decodeImage(new Uint8Array([1, 2, 3]), "image/png");
@@ -154,6 +154,16 @@ describe("decodeImage", () => {
     expect(browser.decode).toHaveBeenCalledExactlyOnceWith();
     expect(browser.closeFrame).toHaveBeenCalledExactlyOnceWith();
     expect(browser.closeDecoder).toHaveBeenCalledExactlyOnceWith();
+    expect(debugLog).toHaveBeenCalledExactlyOnceWith(
+      "Image response decoded into the in-memory pixel boundary",
+      {
+        durationMilliseconds: expect.any(Number),
+        encodedBytes: 3,
+        mimeType: "image/png",
+        width: 1,
+        height: 1,
+      },
+    );
   });
 
   it("rejects every animated track before decoding a frame", async () => {
@@ -197,6 +207,11 @@ describe("decodeImage", () => {
     });
     expect(errorLog).toHaveBeenCalledExactlyOnceWith(
       "Image decoding stopped: DECODE_FAILED",
+      {
+        durationMilliseconds: expect.any(Number),
+        encodedBytes: 3,
+        mimeType: "image/png",
+      },
     );
   });
 });

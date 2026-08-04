@@ -113,7 +113,7 @@ def _write_manifest(
     input_height: int = 2,
 ) -> None:
     path.write_text(
-        f'''schema_version = 1
+        f'''schema_version = 2
 
 [model]
 id = "synthetic-model"
@@ -149,12 +149,10 @@ classes = {_CLASS_COUNT}
 [preprocessing]
 color_space = "RGB"
 layout = "NCHW"
-resize_mode = "shortest_side"
-resize_shortest_side = 2
+resize_mode = "contain"
+allow_upscale = true
 interpolation = "bilinear"
-crop_mode = "center"
-crop_width = 2
-crop_height = {input_height}
+padding_mode = "black"
 pixel_scale = 0.0039215686274509803
 mean = [0.485, 0.456, 0.406]
 standard_deviation = [0.229, 0.224, 0.225]
@@ -190,7 +188,7 @@ def test_checked_in_source_manifest_is_strictly_valid() -> None:
 
 def test_invalid_source_manifest_is_rejected(tmp_path: Path) -> None:
     manifest_path = tmp_path / "invalid.toml"
-    manifest_path.write_text("schema_version = 1\n", encoding="utf-8")
+    manifest_path.write_text("schema_version = 2\n", encoding="utf-8")
 
     with pytest.raises(AcquisitionError, match="invalid source manifest"):
         load_source_manifest(manifest_path)

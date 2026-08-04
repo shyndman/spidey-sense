@@ -10,7 +10,7 @@ import {
 import type { ModelMetadata } from "./metadata";
 
 const metadata: ModelMetadata = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   model: {
     id: "synthetic-model",
     filename: "synthetic.onnx",
@@ -27,12 +27,10 @@ const metadata: ModelMetadata = {
     layout: "NCHW",
     shape: [null, 3, 2, 2],
     colorSpace: "RGB",
-    resizeMode: "shortest_side",
-    resizeShortestSide: 2,
+    resizeMode: "contain",
+    allowUpscale: true,
     interpolation: "bilinear",
-    cropMode: "center",
-    cropWidth: 2,
-    cropHeight: 2,
+    paddingMode: "black",
     pixelScale: 1,
     mean: [0, 0, 0],
     standardDeviation: [1, 1, 1],
@@ -87,6 +85,7 @@ async function expectInferenceCode(
 describe("runModelInference", () => {
   beforeEach(() => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(console, "debug").mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -120,6 +119,14 @@ describe("runModelInference", () => {
     });
     expect(result.blockedScore).toBeCloseTo(0.66524096);
     expect(result.debugScore).toBeCloseTo(0.33475904);
+    expect(console.debug).toHaveBeenCalledExactlyOnceWith(
+      "Model inference completed",
+      {
+        durationMilliseconds: expect.any(Number),
+        inputElements: 12,
+        outputElements: 3,
+      },
+    );
   });
 
   it("uses metadata graph names for the feed and selected output", async () => {
@@ -201,9 +208,10 @@ describe("runModelInference", () => {
       InferenceErrorCode.RUNTIME_EXECUTION_FAILED,
     );
     expect(error.cause).toBe(runtimeCause);
-    expect(console.error).toHaveBeenCalledWith(
-      "Model inference failed",
-      InferenceErrorCode.RUNTIME_EXECUTION_FAILED,
-    );
+    expect(console.error).toHaveBeenCalledWith("Model inference failed", {
+      code: InferenceErrorCode.RUNTIME_EXECUTION_FAILED,
+      durationMilliseconds: expect.any(Number),
+      inputElements: 12,
+    });
   });
 });

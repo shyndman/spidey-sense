@@ -58,17 +58,25 @@ export interface InferenceResult {
  * all come from previously validated metadata so this module duplicates no
  * model constants.
  *
- * Failures are logged only as a stable error code. Tensor values, model output,
- * model bytes, image data, and URLs are never included in logs. The thrown
- * `InferenceError` retains the runtime cause for programmatic diagnostics.
+ * Logs expose only elapsed time, input/output element counts, and stable
+ * failure codes. Tensor values, model output, model bytes, image data, and URLs
+ * are never included. The thrown `InferenceError` retains the runtime cause for
+ * programmatic diagnostics.
  */
 export async function runModelInference(
   session: InferenceSessionLike,
   metadata: ModelMetadata,
   input: Float32Array,
 ): Promise<InferenceResult> {
+  const startedAt = performance.now();
   try {
-    return await executeInference(session, metadata, input);
+    const result = await executeInference(session, metadata, input);
+    console.debug("Model inference completed", {
+      durationMilliseconds: performance.now() - startedAt,
+      inputElements: input.length,
+      outputElements: result.probabilities.length,
+    });
+    return result;
   } catch (cause: unknown) {
     const error =
       cause instanceof InferenceError
@@ -79,7 +87,11 @@ export async function runModelInference(
             cause,
           );
 
-    console.error("Model inference failed", error.code);
+    console.error("Model inference failed", {
+      code: error.code,
+      durationMilliseconds: performance.now() - startedAt,
+      inputElements: input.length,
+    });
     throw error;
   }
 }

@@ -21,7 +21,7 @@ function metadataFixture() {
   const debug: [MutableLabel] = [{ ...labels[0] }];
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     model: {
       id: "synthetic",
       filename: "model.onnx",
@@ -38,12 +38,10 @@ function metadataFixture() {
       layout: "NCHW",
       shape: [null, 3, 2, 2],
       colorSpace: "RGB",
-      resizeMode: "shortest_side",
-      resizeShortestSide: 2,
+      resizeMode: "contain",
+      allowUpscale: true,
       interpolation: "bilinear",
-      cropMode: "center",
-      cropWidth: 2,
-      cropHeight: 2,
+      paddingMode: "black",
       pixelScale: 1 / 255,
       mean: [0.1, 0.2, 0.3],
       standardDeviation: [0.4, 0.5, 0.6],
@@ -67,14 +65,14 @@ describe("parseModelMetadata", () => {
   it("parses the generated camelCase metadata shape", () => {
     const parsed = parseModelMetadata(metadataFixture());
 
-    expect(parsed.schemaVersion).toBe(1);
+    expect(parsed.schemaVersion).toBe(2);
     expect(parsed.output.labels).toHaveLength(2);
     expect(parsed.classes.blocked[0]).toEqual(parsed.output.labels[1]);
   });
 
   it("rejects unsupported schema versions", () => {
     const value = metadataFixture();
-    value.schemaVersion = 2;
+    value.schemaVersion = 1;
 
     expect(() => parseModelMetadata(value)).toThrow();
   });

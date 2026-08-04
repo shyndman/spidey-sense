@@ -1,4 +1,4 @@
-schema_version = 1
+schema_version = 2
 
 [model]
 id = "mobilenetv2-12"
@@ -34,12 +34,10 @@ classes = 1000
 [preprocessing]
 color_space = "RGB"
 layout = "NCHW"
-resize_mode = "shortest_side"
-resize_shortest_side = 256
+resize_mode = "contain"
+allow_upscale = true
 interpolation = "bilinear"
-crop_mode = "center"
-crop_width = 224
-crop_height = 224
+padding_mode = "black"
 pixel_scale = 0.0039215686274509803
 mean = [0.485, 0.456, 0.406]
 standard_deviation = [0.229, 0.224, 0.225]

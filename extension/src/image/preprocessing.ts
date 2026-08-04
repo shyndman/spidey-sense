@@ -73,8 +73,10 @@ export interface ImagePreprocessingDependencies {
 interface ResizeGeometry {
   readonly width: number;
   readonly height: number;
-  readonly cropLeft: number;
-  readonly cropTop: number;
+  readonly targetWidth: number;
+  readonly targetHeight: number;
+  readonly paddingLeft: number;
+  readonly paddingTop: number;
 }
 
 async function initializeResizeWasm(): Promise<void> {
@@ -106,34 +108,44 @@ const defaultDependencies: ImagePreprocessingDependencies = {
 
 /**
  * Converts decoded RGBA8 sRGB pixels into the exact single-sample NCHW float32
- * input described by generated model metadata. The shorter side is resized with
- * an antialiased bilinear triangle filter, then cropped using Torchvision's
- * integer center geometry. Premultiplied-alpha resizing prevents hidden colors
- * in transparent pixels from bleeding into neighbors; the resized pixels are
- * composited against black before RGB scaling and channel normalization.
+ * input described by generated model metadata. The complete source image is
+ * fitted inside the model input while preserving its aspect ratio, upscaling
+ * small inputs, and centering any unused area on black padding. Premultiplied-
+ * alpha triangle resizing prevents hidden colors in transparent pixels from
+ * bleeding into neighbors before pixels are composited against black.
  *
  * Transformation is fail-closed at this boundary: every invalid image,
  * malformed transform, resize failure, and non-finite output throws a typed
- * error. Logs contain only stable codes—never pixels, tensor values, dimensions,
- * metadata values, or URLs.
+ * error. Logs expose only elapsed time, dimensions, element counts, and stable
+ * failure codes—never pixels, tensor values, metadata values, or URLs.
  */
 export async function transformImageToModelInput(
   image: DecodedImage,
   metadata: ModelMetadata,
   dependencies: ImagePreprocessingDependencies = defaultDependencies,
 ): Promise<Float32Array> {
+  const startedAt = performance.now();
   try {
     validateImage(image);
     validateNormalization(metadata);
-    const geometry = deriveResizeGeometry(image, metadata);
+    const geometry = deriveContainGeometry(image, metadata);
     const resized = await dependencies.resize(
       image,
       geometry.width,
       geometry.height,
     );
     validateResizeOutput(resized, geometry);
-    const output = normalizeCenterCrop(resized, metadata, geometry);
-    console.debug("Decoded image transformed into the model input boundary");
+    const output = normalizeContainedImage(resized, metadata, geometry);
+    console.debug("Decoded image transformed into the model input boundary", {
+      durationMilliseconds: performance.now() - startedAt,
+      sourceWidth: image.width,
+      sourceHeight: image.height,
+      resizedWidth: geometry.width,
+      resizedHeight: geometry.height,
+      paddingLeft: geometry.paddingLeft,
+      paddingTop: geometry.paddingTop,
+      outputElements: output.length,
+    });
     return output;
   } catch (cause: unknown) {
     const error =
@@ -143,7 +155,11 @@ export async function transformImageToModelInput(
             ImagePreprocessingErrorCode.TRANSFORMATION_FAILED,
             cause,
           );
-    console.error(`Image preprocessing stopped: ${error.code}`);
+    console.error(`Image preprocessing stopped: ${error.code}`, {
+      durationMilliseconds: performance.now() - startedAt,
+      sourceWidth: image.width,
+      sourceHeight: image.height,
+    });
     throw error;
   }
 }
@@ -196,34 +212,32 @@ function validateNormalization(metadata: ModelMetadata): void {
   }
 }
 
-function deriveResizeGeometry(
+function deriveContainGeometry(
   image: DecodedImage,
   metadata: ModelMetadata,
 ): ResizeGeometry {
-  const targetShortSide = metadata.input.resizeShortestSide;
-  const sourceShortSide = Math.min(image.width, image.height);
-  const sourceLongSide = Math.max(image.width, image.height);
-  const resizedLongSide = Math.trunc(
-    (targetShortSide * sourceLongSide) / sourceShortSide,
+  const targetHeight = metadata.input.shape[2];
+  const targetWidth = metadata.input.shape[3];
+  const scale = Math.min(
+    targetWidth / image.width,
+    targetHeight / image.height,
   );
-  const widthIsShorter = image.width <= image.height;
-  const width = widthIsShorter ? targetShortSide : resizedLongSide;
-  const height = widthIsShorter ? resizedLongSide : targetShortSide;
-
-  if (
-    width < metadata.input.cropWidth ||
-    height < metadata.input.cropHeight
-  ) {
-    throw new ImagePreprocessingError(
-      ImagePreprocessingErrorCode.INVALID_METADATA,
-    );
-  }
+  const width = Math.min(
+    targetWidth,
+    Math.max(1, Math.round(image.width * scale)),
+  );
+  const height = Math.min(
+    targetHeight,
+    Math.max(1, Math.round(image.height * scale)),
+  );
 
   return {
     width,
     height,
-    cropLeft: roundHalfToEven((width - metadata.input.cropWidth) / 2),
-    cropTop: roundHalfToEven((height - metadata.input.cropHeight) / 2),
+    targetWidth,
+    targetHeight,
+    paddingLeft: Math.floor((targetWidth - width) / 2),
+    paddingTop: Math.floor((targetHeight - height) / 2),
   };
 }
 
@@ -244,25 +258,39 @@ function validateResizeOutput(
   }
 }
 
-function normalizeCenterCrop(
+function normalizeContainedImage(
   resized: ResizedRgbaImage,
   metadata: ModelMetadata,
   geometry: ResizeGeometry,
 ): Float32Array {
-  const cropWidth = metadata.input.cropWidth;
-  const cropHeight = metadata.input.cropHeight;
-  const channelPlaneLength = cropWidth * cropHeight;
+  const channelPlaneLength = geometry.targetWidth * geometry.targetHeight;
   const output = new Float32Array(
     RGB_CHANNEL_INDICES.length * channelPlaneLength,
   );
 
-  for (let y = 0; y < cropHeight; y += 1) {
-    const sourceY = geometry.cropTop + y;
-    for (let x = 0; x < cropWidth; x += 1) {
-      const sourceX = geometry.cropLeft + x;
-      const sourceOffset =
-        (sourceY * resized.width + sourceX) * RGBA_CHANNEL_COUNT;
-      const outputOffset = y * cropWidth + x;
+  for (const channel of RGB_CHANNEL_INDICES) {
+    const black =
+      (0 - metadata.input.mean[channel]) /
+      metadata.input.standardDeviation[channel];
+    if (!Number.isFinite(black)) {
+      throw new ImagePreprocessingError(
+        ImagePreprocessingErrorCode.NON_FINITE_OUTPUT,
+      );
+    }
+    output.fill(
+      black,
+      channel * channelPlaneLength,
+      (channel + 1) * channelPlaneLength,
+    );
+  }
+
+  for (let y = 0; y < resized.height; y += 1) {
+    for (let x = 0; x < resized.width; x += 1) {
+      const sourceOffset = (y * resized.width + x) * RGBA_CHANNEL_COUNT;
+      const outputOffset =
+        (geometry.paddingTop + y) * geometry.targetWidth +
+        geometry.paddingLeft +
+        x;
       writeNormalizedPixel(
         output,
         outputOffset,
@@ -301,9 +329,3 @@ function writeNormalizedPixel(
   }
 }
 
-function roundHalfToEven(value: number): number {
-  const floor = Math.floor(value);
-  const fraction = value - floor;
-  if (fraction !== 0.5) return Math.round(value);
-  return floor % 2 === 0 ? floor : floor + 1;
-}

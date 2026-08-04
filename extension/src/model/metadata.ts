@@ -37,12 +37,10 @@ const inputSchema = z
       .tuple([z.null(), positiveInteger, positiveInteger, positiveInteger])
       .readonly(),
     colorSpace: z.literal("RGB"),
-    resizeMode: z.literal("shortest_side"),
-    resizeShortestSide: positiveInteger,
+    resizeMode: z.literal("contain"),
+    allowUpscale: z.literal(true),
     interpolation: z.literal("bilinear"),
-    cropMode: z.literal("center"),
-    cropWidth: positiveInteger,
-    cropHeight: positiveInteger,
+    paddingMode: z.literal("black"),
     pixelScale: z.number(),
     mean: triple,
     standardDeviation: triple,
@@ -67,7 +65,7 @@ const classGroupsSchema = z
   .readonly();
 
 const modelMetadataBaseSchema = z.strictObject({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   model: modelSchema,
   input: inputSchema,
   output: outputSchema,
@@ -121,15 +119,11 @@ function validateInputShape(
   context: RefinementContext,
 ): void {
   const { input } = metadata;
-  if (
-    input.shape[1] !== 3 ||
-    input.shape[2] !== input.cropHeight ||
-    input.shape[3] !== input.cropWidth
-  ) {
+  if (input.shape[1] !== 3) {
     context.addIssue({
       code: "custom",
       path: ["input", "shape"],
-      message: "input shape must match RGB channels and crop dimensions",
+      message: "input shape must contain three RGB channels",
       input: input.shape,
     });
   }

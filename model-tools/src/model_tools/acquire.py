@@ -380,7 +380,7 @@ def _build_metadata(
         raise AcquisitionError("blocked and debug class groups overlap")
 
     return ArtifactMetadata(
-        schema_version=1,
+        schema_version=2,
         model=_build_model_metadata(manifest),
         input=_build_input_metadata(manifest),
         output=OutputMetadata(
@@ -418,11 +418,9 @@ def _build_input_metadata(manifest: SourceManifest) -> InputMetadata:
         shape=(None, source.channels, source.height, source.width),
         color_space=preprocessing.color_space,
         resize_mode=preprocessing.resize_mode,
-        resize_shortest_side=preprocessing.resize_shortest_side,
+        allow_upscale=preprocessing.allow_upscale,
         interpolation=preprocessing.interpolation,
-        crop_mode=preprocessing.crop_mode,
-        crop_width=preprocessing.crop_width,
-        crop_height=preprocessing.crop_height,
+        padding_mode=preprocessing.padding_mode,
         pixel_scale=preprocessing.pixel_scale,
         mean=preprocessing.mean,
         standard_deviation=preprocessing.standard_deviation,

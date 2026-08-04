@@ -97,24 +97,36 @@ export function selectImageResponse(
  * used whenever it supports the declared MIME type because its track metadata
  * can reject animations before a frame reaches preprocessing. Static SVG uses
  * Firefox's detached image-element decoder after an animation markup check.
- * No encoded or decoded content is logged, displayed, or persisted.
+ * Logs expose only MIME type, byte count, decoded dimensions, elapsed time,
+ * and stable failure codes—never encoded or decoded content.
  */
 export async function decodeImage(
   bytes: Uint8Array<ArrayBuffer>,
   mimeType: ImageMimeType,
 ): Promise<DecodedImage> {
+  const startedAt = performance.now();
   let frame: DecodedFrame | undefined;
   try {
     frame = await decodeFrame(bytes, mimeType);
     const decoded = rasterizeFrame(frame);
-    console.debug("Image response decoded into the in-memory pixel boundary");
+    console.debug("Image response decoded into the in-memory pixel boundary", {
+      durationMilliseconds: performance.now() - startedAt,
+      encodedBytes: bytes.byteLength,
+      mimeType,
+      width: decoded.width,
+      height: decoded.height,
+    });
     return decoded;
   } catch (cause: unknown) {
     const error =
       cause instanceof ImageDecodingError
         ? cause
         : new ImageDecodingError(ImageDecodingErrorCode.DECODE_FAILED, cause);
-    console.error(`Image decoding stopped: ${error.code}`);
+    console.error(`Image decoding stopped: ${error.code}`, {
+      durationMilliseconds: performance.now() - startedAt,
+      encodedBytes: bytes.byteLength,
+      mimeType,
+    });
     throw error;
   } finally {
     frame?.close();

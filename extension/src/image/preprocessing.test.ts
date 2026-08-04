@@ -21,19 +21,17 @@ function metadataFixture(
     layout: "NCHW",
     shape: [null, 3, 2, 2],
     colorSpace: "RGB",
-    resizeMode: "shortest_side",
-    resizeShortestSide: 4,
+    resizeMode: "contain",
+    allowUpscale: true,
     interpolation: "bilinear",
-    cropMode: "center",
-    cropWidth: 2,
-    cropHeight: 2,
+    paddingMode: "black",
     pixelScale: 1 / 255,
     mean: [0.1, 0.2, 0.3],
     standardDeviation: [0.5, 0.25, 1],
     ...inputOverrides,
   };
   return parseModelMetadata({
-    schemaVersion: 1,
+    schemaVersion: 2,
     model: {
       id: "synthetic",
       filename: "model.onnx",
@@ -101,68 +99,76 @@ afterEach(() => {
 });
 
 describe("transformImageToModelInput", () => {
-  it("center-crops, composites black, normalizes, and writes NCHW planes", async () => {
-    vi.spyOn(console, "debug").mockImplementation(() => undefined);
+  it("contains the full image, pads black, normalizes, and writes NCHW", async () => {
+    const debugLog = vi.spyOn(console, "debug").mockImplementation(() => undefined);
     const image = decodedImage(2, 1, emptyRgba(2, 1));
-    const resizedData = emptyRgba(8, 4);
-    writePixel(resizedData, 8, 3, 1, [255, 0, 0, OPAQUE_ALPHA]);
-    writePixel(resizedData, 8, 4, 1, [0, 255, 0, 128]);
-    writePixel(resizedData, 8, 3, 2, [255, 255, 255, 0]);
-    writePixel(resizedData, 8, 4, 2, [64, 128, 255, OPAQUE_ALPHA]);
+    const resizedData = emptyRgba(2, 1);
+    writePixel(resizedData, 2, 0, 0, [255, 0, 0, OPAQUE_ALPHA]);
+    writePixel(resizedData, 2, 1, 0, [0, 255, 0, 128]);
     const resize = vi.fn<ImagePreprocessingDependencies["resize"]>(
-      async () => ({ width: 8, height: 4, data: resizedData }),
+      async () => ({ width: 2, height: 1, data: resizedData }),
     );
     const metadata = metadataFixture();
 
     const input = await transformImageToModelInput(image, metadata, { resize });
 
-    expect(resize).toHaveBeenCalledExactlyOnceWith(image, 8, 4);
+    expect(resize).toHaveBeenCalledExactlyOnceWith(image, 2, 1);
     const halfGreen = 128 / 255;
     expectFloatArrayClose(input, [
       1.8,
       -0.2,
       -0.2,
-      (64 / 255 - 0.1) / 0.5,
+      -0.2,
       -0.8,
       (halfGreen - 0.2) / 0.25,
       -0.8,
-      (128 / 255 - 0.2) / 0.25,
+      -0.8,
       -0.3,
       -0.3,
       -0.3,
-      0.7,
+      -0.3,
     ]);
+    expect(debugLog).toHaveBeenCalledExactlyOnceWith(
+      "Decoded image transformed into the model input boundary",
+      {
+        durationMilliseconds: expect.any(Number),
+        sourceWidth: 2,
+        sourceHeight: 1,
+        resizedWidth: 2,
+        resizedHeight: 1,
+        paddingLeft: 0,
+        paddingTop: 0,
+        outputElements: 12,
+      },
+    );
   });
 
-  it("truncates the resized long side to match Torchvision geometry", async () => {
+  it("preserves aspect ratio within the complete model boundary", async () => {
     vi.spyOn(console, "debug").mockImplementation(() => undefined);
     const image = decodedImage(4, 3, emptyRgba(4, 3));
     const resize = vi.fn<ImagePreprocessingDependencies["resize"]>(
-      async () => ({ width: 6, height: 5, data: emptyRgba(6, 5) }),
+      async () => ({ width: 3, height: 2, data: emptyRgba(3, 2) }),
     );
-    const metadata = metadataFixture({ resizeShortestSide: 5 });
+    const metadata = metadataFixture({ shape: [null, 3, 2, 3] });
 
     await transformImageToModelInput(image, metadata, { resize });
 
-    expect(resize).toHaveBeenCalledExactlyOnceWith(image, 6, 5);
+    expect(resize).toHaveBeenCalledExactlyOnceWith(image, 3, 2);
   });
 
-  it("uses half-to-even rounding for an odd center-crop remainder", async () => {
+  it("centers contained pixels with odd padding on the trailing edge", async () => {
     vi.spyOn(console, "debug").mockImplementation(() => undefined);
-    const image = decodedImage(3, 2, emptyRgba(3, 2));
-    const resizedData = emptyRgba(6, 4);
-    for (let y = 0; y < 4; y += 1) {
-      for (let x = 0; x < 6; x += 1) {
-        writePixel(resizedData, 6, x, y, [x, 0, 0, OPAQUE_ALPHA]);
-      }
+    const image = decodedImage(1, 2, emptyRgba(1, 2));
+    const resizedData = emptyRgba(2, 3);
+    for (let y = 0; y < 3; y += 1) {
+      writePixel(resizedData, 2, 0, y, [1, 0, 0, OPAQUE_ALPHA]);
+      writePixel(resizedData, 2, 1, y, [2, 0, 0, OPAQUE_ALPHA]);
     }
     const resize = vi.fn<ImagePreprocessingDependencies["resize"]>(
-      async () => ({ width: 6, height: 4, data: resizedData }),
+      async () => ({ width: 2, height: 3, data: resizedData }),
     );
     const metadata = metadataFixture({
-      shape: [null, 3, 2, 3],
-      cropWidth: 3,
-      cropHeight: 2,
+      shape: [null, 3, 3, 3],
       pixelScale: 1,
       mean: [0, 0, 0],
       standardDeviation: [1, 1, 1],
@@ -170,7 +176,11 @@ describe("transformImageToModelInput", () => {
 
     const input = await transformImageToModelInput(image, metadata, { resize });
 
-    expect(Array.from(input.slice(0, 6))).toEqual([2, 3, 4, 2, 3, 4]);
+    expect(Array.from(input.slice(0, 9))).toEqual([
+      1, 2, 0,
+      1, 2, 0,
+      1, 2, 0,
+    ]);
   });
 
   it("rejects an invalid decoded pixel buffer before resizing", async () => {
@@ -190,7 +200,7 @@ describe("transformImageToModelInput", () => {
   it("rejects an invalid resizer result", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const resize = vi.fn<ImagePreprocessingDependencies["resize"]>(
-      async () => ({ width: 8, height: 4, data: new Uint8ClampedArray() }),
+      async () => ({ width: 2, height: 1, data: new Uint8ClampedArray() }),
     );
 
     await expect(
@@ -207,10 +217,10 @@ describe("transformImageToModelInput", () => {
 
   it("rejects float32 overflow at the tensor boundary", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const resizedData = emptyRgba(8, 4);
+    const resizedData = emptyRgba(2, 1);
     resizedData.fill(OPAQUE_ALPHA);
     const resize = vi.fn<ImagePreprocessingDependencies["resize"]>(
-      async () => ({ width: 8, height: 4, data: resizedData }),
+      async () => ({ width: 2, height: 1, data: resizedData }),
     );
     const metadata = metadataFixture({
       pixelScale: Number.MAX_VALUE,
@@ -248,6 +258,11 @@ describe("transformImageToModelInput", () => {
     });
     expect(errorLog).toHaveBeenCalledExactlyOnceWith(
       "Image preprocessing stopped: TRANSFORMATION_FAILED",
+      {
+        durationMilliseconds: expect.any(Number),
+        sourceWidth: 2,
+        sourceHeight: 1,
+      },
     );
   });
 });

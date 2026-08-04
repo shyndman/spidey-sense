@@ -10,7 +10,7 @@ import {
 
 function metadataFixture(): ModelMetadata {
   return parseModelMetadata({
-    schemaVersion: 1,
+    schemaVersion: 2,
     model: {
       id: "synthetic",
       filename: "model.onnx",
@@ -27,12 +27,10 @@ function metadataFixture(): ModelMetadata {
       layout: "NCHW",
       shape: [null, 3, 2, 2],
       colorSpace: "RGB",
-      resizeMode: "shortest_side",
-      resizeShortestSide: 2,
+      resizeMode: "contain",
+      allowUpscale: true,
       interpolation: "bilinear",
-      cropMode: "center",
-      cropWidth: 2,
-      cropHeight: 2,
+      paddingMode: "black",
       pixelScale: 1 / 255,
       mean: [0.1, 0.2, 0.3],
       standardDeviation: [0.4, 0.5, 0.6],

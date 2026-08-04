@@ -92,16 +92,14 @@ class GraphSource(ContractModel):
 
 
 class PreprocessingSource(ContractModel):
-    """Image-to-tensor transform documented by the upstream model."""
+    """Image-to-tensor transform selected for complete source-image coverage."""
 
     color_space: Literal["RGB"]
     layout: Literal["NCHW"]
-    resize_mode: Literal["shortest_side"]
-    resize_shortest_side: PositiveInt
+    resize_mode: Literal["contain"]
+    allow_upscale: Literal[True]
     interpolation: Literal["bilinear"]
-    crop_mode: Literal["center"]
-    crop_width: PositiveInt
-    crop_height: PositiveInt
+    padding_mode: Literal["black"]
     pixel_scale: float
     mean: tuple[float, float, float]
     standard_deviation: tuple[float, float, float]
@@ -135,7 +133,7 @@ class ClassesSource(ContractModel):
 class SourceManifest(ContractModel):
     """Complete checked-in specification for recreating the model bundle."""
 
-    schema_version: Literal[1]
+    schema_version: Literal[2]
     model: ModelSource
     labels: LabelsSource
     graph: GraphSource
@@ -165,12 +163,10 @@ class InputMetadata(ContractModel):
     layout: Literal["NCHW"]
     shape: tuple[None, PositiveInt, PositiveInt, PositiveInt]
     color_space: Literal["RGB"]
-    resize_mode: Literal["shortest_side"]
-    resize_shortest_side: PositiveInt
+    resize_mode: Literal["contain"]
+    allow_upscale: Literal[True]
     interpolation: Literal["bilinear"]
-    crop_mode: Literal["center"]
-    crop_width: PositiveInt
-    crop_height: PositiveInt
+    padding_mode: Literal["black"]
     pixel_scale: float
     mean: tuple[float, float, float]
     standard_deviation: tuple[float, float, float]
@@ -204,7 +200,7 @@ class ClassGroups(ContractModel):
 class ArtifactMetadata(ContractModel):
     """Deterministic metadata bundled beside the model for the extension."""
 
-    schema_version: Literal[1]
+    schema_version: Literal[2]
     model: ModelMetadata
     input: InputMetadata
     output: OutputMetadata
