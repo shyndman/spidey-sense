@@ -175,10 +175,10 @@ type SmokeStatus = (typeof SmokeStatus)[keyof typeof SmokeStatus];
 /**
  * Exercises the exact packaged metadata, model, ONNX Runtime, and antialiased
  * resize assets from a real Firefox extension context. A harmless decoded proxy
- * is transformed through metadata-driven resize, center crop, black alpha
- * compositing, normalization, NCHW layout, and one real inference. The page is
- * unlisted and handles every proxy only in memory; WebDriver opens its internal
- * extension URL directly during the explicit smoke command.
+ * is transformed through metadata-driven aspect-preserving containment, black
+ * padding and alpha compositing, normalization, NCHW layout, and one real
+ * inference. The page is unlisted and handles every proxy only in memory;
+ * WebDriver opens its internal extension URL during the explicit smoke command.
  */
 async function runFirefoxModelSmoke(decoded: DecodedImage): Promise<void> {
   const metadataUrl = new URL(
