@@ -204,6 +204,62 @@ def test_checked_in_tinyvit_manifest_pins_conversion_contract() -> None:
     assert manifest.graph.output.classes == 1000
 
 
+def test_checked_in_mobilenetv4_manifest_pins_conversion_contract() -> None:
+    manifest_path = (
+        Path(__file__).parents[1] / "model-sources/mobilenetv4-conv-medium-224.toml"
+    )
+
+    manifest = load_source_manifest(manifest_path)
+
+    assert isinstance(manifest.model, TimmSafetensorsModelSource)
+    assert manifest.model.id == "mobilenetv4-conv-medium-224"
+    assert manifest.model.license == "apache-2.0"
+    assert manifest.model.format == "timm-safetensors"
+    assert (
+        manifest.model.architecture
+        == "mobilenetv4_conv_medium.e500_r224_in1k"
+    )
+    assert manifest.model.revision == "02a09fbfb82b289e871ba8255f9da58c056fb13b"
+    assert manifest.model.sha256 == (
+        "10f9f8057d574f71d22c52d31cadab8af0bc325841fd93939c86d45d20998cad"
+    )
+    assert manifest.model.size_bytes == 39179184
+    assert manifest.model.exporter_version == "1.0.28"
+    assert manifest.model.opset == 17
+    assert manifest.model.artifact_sha256 == (
+        "ff9c0617abcd88fc364afb8bc5784c0fc3ddb90fb4ecb165d00146ed8235a945"
+    )
+    assert manifest.model.artifact_size_bytes == 38763301
+    assert manifest.graph.input.data_type == "float32"
+    assert manifest.graph.input.batch_dimension == "batch_size"
+    assert (
+        manifest.graph.input.channels,
+        manifest.graph.input.height,
+        manifest.graph.input.width,
+    ) == (3, 224, 224)
+    assert manifest.graph.output.data_type == "float32"
+    assert manifest.graph.output.batch_dimension == "batch_size"
+    assert manifest.graph.output.classes == 1000
+    assert manifest.preprocessing.color_space == "RGB"
+    assert manifest.preprocessing.layout == "NCHW"
+    assert manifest.preprocessing.resize_mode == "contain"
+    assert manifest.preprocessing.allow_upscale is True
+    assert manifest.preprocessing.interpolation == "bilinear"
+    assert manifest.preprocessing.padding_mode == "black"
+    assert manifest.preprocessing.mean == (0.485, 0.456, 0.406)
+    assert manifest.preprocessing.standard_deviation == (0.229, 0.224, 0.225)
+    assert manifest.postprocessing.activation == "softmax"
+    assert manifest.classes.blocked_synsets == (
+        "n01773157",
+        "n01773549",
+        "n01773797",
+        "n01774384",
+        "n01774750",
+        "n01775062",
+    )
+    assert manifest.classes.debug_synsets == ("n07753592",)
+
+
 def test_invalid_source_manifest_is_rejected(tmp_path: Path) -> None:
     manifest_path = tmp_path / "invalid.toml"
     manifest_path.write_text("schema_version = 3\n", encoding="utf-8")
