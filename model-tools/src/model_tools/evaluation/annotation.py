@@ -25,6 +25,7 @@ from .contracts import (
     StageFailure,
     StageSummary,
 )
+from .events import AggregateEvent, emit_event
 from .paths import EvaluationPaths
 
 CHECKPOINT: Final[str] = "IDEA-Research/grounding-dino-base"
@@ -506,13 +507,30 @@ def annotate(paths: EvaluationPaths) -> StageSummary:
             skipped += 1
             continue
         pending.append((manifest_path, sample))
+    _emit_stage_event(
+        "start",
+        attempted=attempted,
+        completed=completed,
+        skipped=skipped,
+        failed=failed,
+    )
+    processed = 0
     if not pending:
-        return StageSummary(
-            attempted=attempted,
-            completed=completed,
-            skipped=skipped,
-            failed=failed,
+        return _complete(
+            StageSummary(
+                attempted=attempted,
+                completed=completed,
+                skipped=skipped,
+                failed=failed,
+            )
         )
+    _emit_stage_event(
+        "model_loading",
+        attempted=attempted,
+        completed=completed,
+        skipped=skipped,
+        failed=failed,
+    )
     try:
         torch, processor, model, device = _load_runtime(paths)
     except Exception:
@@ -525,12 +543,33 @@ def annotate(paths: EvaluationPaths) -> StageSummary:
                 code="model_unavailable",
                 sample_id=sample.sample_id,
             )
-        return StageSummary(
-            attempted=attempted,
-            completed=completed,
-            skipped=skipped,
-            failed=failed,
+            processed += 1
+            if processed % 25 == 0:
+                _emit_stage_event(
+                    "progress",
+                    attempted=attempted,
+                    completed=completed,
+                    skipped=skipped,
+                    failed=failed,
+                    processed=processed,
+                )
+        return _complete(
+            StageSummary(
+                attempted=attempted,
+                completed=completed,
+                skipped=skipped,
+                failed=failed,
+            ),
+            processed=processed,
         )
+    no_grad: object = getattr(torch, "no_grad", None)
+    _emit_stage_event(
+        "model_ready",
+        attempted=attempted,
+        completed=completed,
+        skipped=skipped,
+        failed=failed,
+    )
     try:
         image_module = importlib.import_module("PIL.Image")
     except Exception:
@@ -542,13 +581,25 @@ def annotate(paths: EvaluationPaths) -> StageSummary:
                 code="image_loader_unavailable",
                 sample_id=sample.sample_id,
             )
-        return StageSummary(
-            attempted=attempted,
-            completed=completed,
-            skipped=skipped,
-            failed=failed,
+            processed += 1
+            if processed % 25 == 0:
+                _emit_stage_event(
+                    "progress",
+                    attempted=attempted,
+                    completed=completed,
+                    skipped=skipped,
+                    failed=failed,
+                    processed=processed,
+                )
+        return _complete(
+            StageSummary(
+                attempted=attempted,
+                completed=completed,
+                skipped=skipped,
+                failed=failed,
+            ),
+            processed=processed,
         )
-    no_grad: object = getattr(torch, "no_grad", None)
     image_opener: object = getattr(image_module, "open", None)
     if not _is_callable(image_opener):
         for manifest_path, sample in pending:
@@ -559,11 +610,24 @@ def annotate(paths: EvaluationPaths) -> StageSummary:
                 code="image_loader_unavailable",
                 sample_id=sample.sample_id,
             )
-        return StageSummary(
-            attempted=attempted,
-            completed=completed,
-            skipped=skipped,
-            failed=failed,
+            processed += 1
+            if processed % 25 == 0:
+                _emit_stage_event(
+                    "progress",
+                    attempted=attempted,
+                    completed=completed,
+                    skipped=skipped,
+                    failed=failed,
+                    processed=processed,
+                )
+        return _complete(
+            StageSummary(
+                attempted=attempted,
+                completed=completed,
+                skipped=skipped,
+                failed=failed,
+            ),
+            processed=processed,
         )
     for manifest_path, sample in pending:
         try:
@@ -594,13 +658,26 @@ def annotate(paths: EvaluationPaths) -> StageSummary:
                 code="annotation_failed",
                 sample_id=sample.sample_id,
             )
-            continue
-        completed += 1
-    return StageSummary(
-        attempted=attempted,
-        completed=completed,
-        skipped=skipped,
-        failed=failed,
+        else:
+            completed += 1
+        processed += 1
+        if processed % 25 == 0:
+            _emit_stage_event(
+                "progress",
+                attempted=attempted,
+                completed=completed,
+                skipped=skipped,
+                failed=failed,
+                processed=processed,
+            )
+    return _complete(
+        StageSummary(
+            attempted=attempted,
+            completed=completed,
+            skipped=skipped,
+            failed=failed,
+        ),
+        processed=processed,
     )
 
 

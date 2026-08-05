@@ -15,7 +15,7 @@ def test_parser_exposes_approved_commands_and_default() -> None:
         assert parser.parse_args([command]).command == command
 
 
-def test_score_invocation_suppresses_subprocess_output(
+def test_score_invocation_streams_stderr_and_suppresses_stdout(
     tmp_path: Path,
     monkeypatch,
     capsys,
@@ -34,6 +34,7 @@ def test_score_invocation_suppresses_subprocess_output(
     monkeypatch.setattr(cli.subprocess, "run", fake_run)
     assert cli.main(["score", "--data-dir", str(tmp_path)]) == 0
     captured = capsys.readouterr().out
+    assert captured.count("\n") == 1
     assert "sample-1" not in captured
     assert calls == [
         (
@@ -47,7 +48,12 @@ def test_score_invocation_suppresses_subprocess_output(
                 "--data-dir",
                 str(tmp_path),
             ],
-            {"check": True, "capture_output": True, "text": True},
+            {
+                "check": True,
+                "stdout": cli.subprocess.PIPE,
+                "stderr": None,
+                "text": True,
+            },
         )
     ]
 

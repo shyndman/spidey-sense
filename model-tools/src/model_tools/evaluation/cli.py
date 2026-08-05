@@ -59,7 +59,7 @@ def _emit(payload: object) -> None:
 
 
 def _run_score(paths: EvaluationPaths) -> StageSummary:
-    """Invoke the TypeScript scorer while suppressing all subprocess output."""
+    """Invoke the TypeScript scorer with live stderr and suppressed stdout."""
     manifest_ids: set[str] = {path.stem for path in paths.manifests.glob("*.json")}
 
     before_ids = {
@@ -76,7 +76,13 @@ def _run_score(paths: EvaluationPaths) -> StageSummary:
         str(paths.root),
     ]
     try:
-        _ = subprocess.run(command, check=True, capture_output=True, text=True)
+        _ = subprocess.run(
+            command,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=None,
+            text=True,
+        )
     except (OSError, subprocess.CalledProcessError):
         skipped = len(before_ids)
         failed = max(1, len(manifest_ids) - skipped)

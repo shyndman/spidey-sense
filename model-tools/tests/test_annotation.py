@@ -1,7 +1,7 @@
 """Pure numeric contract tests for detector proposal annotation helpers."""
-
 from __future__ import annotations
 
+import json
 import math
 
 from model_tools.evaluation import annotation
@@ -276,3 +276,107 @@ def test_build_annotation_moves_processed_inputs_to_selected_device() -> None:
 
     assert processed.devices == ["cuda"]
 
+
+def test_annotate_emits_sanitized_lifecycle_and_cadenced_progress(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    class FakeImage:
+        def __enter__(self) -> FakeImage:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def convert(self, _mode: str) -> FakeImage:
+            return self
+
+    class FakeImageModule:
+        @staticmethod
+        def open(_path: object) -> FakeImage:
+            return FakeImage()
+
+    class FakeTorch:
+        @staticmethod
+        def no_grad() -> annotation._NullContext:
+            return annotation._NullContext()
+
+    paths = EvaluationPaths(tmp_path)
+    paths.ensure()
+    for index in range(26):
+        sample_id = f"sample-{index:03d}"
+        image_name = f"{sample_id}.jpg"
+        sample = SampleManifest(
+            sample_id=sample_id,
+            source="inaturalist",
+            source_id=f"observation-{sample_id}",
+            source_category="argiope_aurantia",
+            expected_presence="positive",
+            source_url="https://example.invalid/sample",
+            license="cc0",
+            image_relative_path=f"images/{image_name}",
+            sha256="a" * 64,
+            perceptual_hash="b" * 16,
+            duplicate_group=f"group-{sample_id}",
+            split="calibration",
+            width=64,
+            height=48,
+        )
+        _ = paths.manifest_path(sample_id).write_text(
+            sample.model_dump_json(),
+            encoding="utf-8",
+        )
+        _ = (paths.images / image_name).write_bytes(b"image")
+
+    monkeypatch.setattr(
+        annotation,
+        "_load_runtime",
+        lambda _paths: (FakeTorch(), object(), object(), "cpu"),
+    )
+    monkeypatch.setattr(
+        annotation.importlib,
+        "import_module",
+        lambda _name: FakeImageModule,
+    )
+    monkeypatch.setattr(annotation, "_build_annotation", lambda *_args: object())
+    monkeypatch.setattr(annotation, "_write_atomic", lambda *_args: None)
+
+    summary = annotation.annotate(paths)
+
+    stderr = capsys.readouterr().err
+    events = [
+        json.loads(line)
+        for line in stderr.splitlines()
+        if line
+    ]
+    assert summary.model_dump(mode="json") == {
+        "attempted": 26,
+        "completed": 26,
+        "failed": 0,
+        "schema_version": 1,
+        "skipped": 0,
+    }
+    assert [event["event"] for event in events] == [
+        "start",
+        "model_loading",
+        "model_ready",
+        "progress",
+        "complete",
+    ]
+    assert events[3]["processed"] == 25
+    assert events[4]["processed"] == 26
+    assert events[4]["completed"] == 26
+    allowed = {
+        "stage",
+        "event",
+        "attempted",
+        "completed",
+        "skipped",
+        "failed",
+        "processed",
+    }
+    assert all(set(event) == allowed for event in events)
+    assert "sample-" not in stderr
+    assert str(tmp_path) not in stderr
+    assert "example.invalid" not in stderr

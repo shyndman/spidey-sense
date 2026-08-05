@@ -1,9 +1,10 @@
-"""Aggregate-only acquisition lifecycle events."""
+"""Aggregate-only evaluation lifecycle events."""
 
 from __future__ import annotations
 
 import json
 import sys
+from typing import Literal
 
 from .acquisition_types import (
     EVENT_CATEGORIES,
@@ -12,10 +13,14 @@ from .acquisition_types import (
     JsonObject,
 )
 
+AggregateEvent = AcquisitionEvent | Literal["model_loading", "model_ready"]
+AggregateStage = Literal["acquire", "annotate", "score"]
+
 
 def emit_event(
-    event: AcquisitionEvent,
+    event: AggregateEvent,
     *,
+    stage: AggregateStage = "acquire",
     category: str | None = None,
     page: int | None = None,
     count: int | None = None,
@@ -25,6 +30,7 @@ def emit_event(
     skipped: int | None = None,
     failed: int | None = None,
     resumed: int | None = None,
+    processed: int | None = None,
     code: str | None = None,
 ) -> None:
     """Write one sanitized aggregate lifecycle event to stderr.
@@ -33,7 +39,7 @@ def emit_event(
     image metadata. This keeps live progress useful without exposing samples.
     """
 
-    payload: JsonObject = {"stage": "acquire", "event": event}
+    payload: JsonObject = {"stage": stage, "event": event}
     if category is not None:
         payload["category"] = (
             category if category in EVENT_CATEGORIES else "unknown"
@@ -47,6 +53,7 @@ def emit_event(
         ("skipped", skipped),
         ("failed", failed),
         ("resumed", resumed),
+        ("processed", processed),
     ):
         if value is not None:
             payload[key] = value
@@ -66,4 +73,4 @@ def emit_event(
     _ = sys.stderr.flush()
 
 
-__all__ = ["emit_event"]
+__all__ = ["AggregateEvent", "AggregateStage", "emit_event"]

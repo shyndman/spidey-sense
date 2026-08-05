@@ -69,6 +69,23 @@ export type ScoreStageSummary = Readonly<{
   failed: number;
 }>;
 
+type ScoreProgressEvent =
+  | "start"
+  | "model_loading"
+  | "model_ready"
+  | "progress"
+  | "complete";
+
+type ScoreProgressPayload = Readonly<{
+  readonly stage: "score";
+  readonly event: ScoreProgressEvent;
+  readonly attempted: number;
+  readonly completed: number;
+  readonly skipped: number;
+  readonly failed: number;
+  readonly processed: number;
+}>;
+
 export interface ScoringTensor {
   readonly type: string;
   readonly dims: readonly number[];
@@ -588,13 +605,45 @@ function emptySummary(): ScoreStageSummary {
   };
 }
 
+function emitProgress(
+  event: ScoreProgressEvent,
+  summary: ScoreStageSummary,
+  processed: number,
+): void {
+  const payload: ScoreProgressPayload = {
+    stage: "score",
+    event,
+    attempted: summary.attempted,
+    completed: summary.completed,
+    skipped: summary.skipped,
+    failed: summary.failed,
+    processed,
+  };
+  process.stderr.write(`${JSON.stringify(payload)}\n`);
+}
+
+function completeSummary(
+  summary: ScoreStageSummary,
+  processed: number,
+): ScoreStageSummary {
+  emitProgress("complete", summary, processed);
+  return summary;
+}
+
 /** Scores all manifests, retaining only aggregate counters on stdout via the CLI. */
 export async function score(
   paths: ScorerPaths,
   dependencies: ScorerDependencies = defaultDependencies,
 ): Promise<ScoreStageSummary> {
+  let summary = emptySummary();
+  let processed = 0;
+  emitProgress("start", summary, processed);
   const manifestFiles = await listManifestFiles(paths);
-  const manifests: Array<{ readonly path: string; readonly value?: SampleManifest; readonly code?: FailureCode }> = [];
+  const manifests: Array<{
+    readonly path: string;
+    readonly value?: SampleManifest;
+    readonly code?: FailureCode;
+  }> = [];
   for (const manifestPath of manifestFiles) {
     try {
       const parsed = sampleManifestSchema.parse(await readJson(manifestPath));
@@ -608,51 +657,56 @@ export async function score(
     }
   }
 
-  let summary = emptySummary();
-  const pending = manifests.filter((entry) => entry.value !== undefined);
+  const pending: SampleManifest[] = [];
   for (const entry of manifests) {
     if (entry.code !== undefined) {
-      summary = { ...summary, attempted: summary.attempted + 1, failed: summary.failed + 1 };
-      await writeFailure(paths, entry.code);
-      continue;
-    }
-    const manifest = entry.value!;
-    if (await existingScore(sampleOutputPath(paths, manifest.sample_id), manifest.sample_id)) {
       summary = {
         ...summary,
         attempted: summary.attempted + 1,
-        skipped: summary.skipped + 1,
+        failed: summary.failed + 1,
       };
+      await writeFailure(paths, entry.code);
+      continue;
+    }
+    const manifest = entry.value;
+    if (manifest === undefined) {
+      continue;
+    }
+    summary = { ...summary, attempted: summary.attempted + 1 };
+    if (await existingScore(sampleOutputPath(paths, manifest.sample_id), manifest.sample_id)) {
+      summary = { ...summary, skipped: summary.skipped + 1 };
     } else {
-      summary = { ...summary, attempted: summary.attempted + 1 };
+      pending.push(manifest);
     }
   }
-  if (pending.length === summary.skipped) {
-    return summary;
+
+  const markProcessed = (): void => {
+    processed += 1;
+    if (processed % 25 === 0) {
+      emitProgress("progress", summary, processed);
+    }
+  };
+  if (pending.length === 0) {
+    return completeSummary(summary, processed);
   }
+  emitProgress("model_loading", summary, processed);
 
   let model: LoadedScoringModel;
   try {
     model = await loadModel(paths, dependencies);
   } catch {
-    for (const entry of pending) {
-      const manifest = entry.value!;
-      if (await existingScore(sampleOutputPath(paths, manifest.sample_id), manifest.sample_id)) {
-        continue;
-      }
+    for (const manifest of pending) {
       await writeFailure(paths, failureCodes.MODEL_LOAD, manifest.sample_id);
       summary = { ...summary, failed: summary.failed + 1 };
+      markProcessed();
     }
-    return summary;
+    return completeSummary(summary, processed);
   }
+  emitProgress("model_ready", summary, processed);
 
   try {
-    for (const entry of pending) {
-      const manifest = entry.value!;
+    for (const manifest of pending) {
       const outputPath = sampleOutputPath(paths, manifest.sample_id);
-      if (await existingScore(outputPath, manifest.sample_id)) {
-        continue;
-      }
       try {
         const record = await scoreOne(
           paths,
@@ -667,11 +721,12 @@ export async function score(
         await writeFailure(paths, failureCodes.INFERENCE, manifest.sample_id);
         summary = { ...summary, failed: summary.failed + 1 };
       }
+      markProcessed();
     }
   } finally {
     await model.session.release().catch(() => undefined);
   }
-  return summary;
+  return completeSummary(summary, processed);
 }
 
 function parseDataDir(argv: readonly string[]): string {
@@ -721,15 +776,15 @@ if (
       }
     })
     .catch(() => {
-      console.log(
-        JSON.stringify({
-          schema_version: SCORE_SCHEMA_VERSION,
-          attempted: 0,
-          completed: 0,
-          skipped: 0,
-          failed: 1,
-        }),
-      );
+      const summary: ScoreStageSummary = {
+        schema_version: SCORE_SCHEMA_VERSION,
+        attempted: 0,
+        completed: 0,
+        skipped: 0,
+        failed: 1,
+      };
+      emitProgress("complete", summary, 0);
+      console.log(JSON.stringify(summary));
       process.exitCode = 1;
     });
 }
