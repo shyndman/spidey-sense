@@ -11,6 +11,10 @@ RUN pnpm install --frozen-lockfile --ignore-scripts
 
 FROM python:3.13-slim
 
+ARG TORCH_VERSION=2.13.0
+ARG TORCH_CUDA_VARIANT=cu130
+ARG TORCH_CUDA_INDEX_URL=https://download.pytorch.org/whl/cu130
+
 RUN apt-get update \
     && apt-get install --no-install-recommends -y \
         ca-certificates \
@@ -42,7 +46,6 @@ ENV PYTHONUNBUFFERED=1 \
     OPENBLAS_NUM_THREADS=1 \
     TOKENIZERS_PARALLELISM=false \
     HF_HUB_DISABLE_TELEMETRY=1 \
-    CUDA_VISIBLE_DEVICES="" \
     PATH="/app/model-tools/.venv/bin:/usr/local/bin:${PATH}"
 
 # The two official images share the Debian/glibc ABI; copying /usr/local
@@ -53,7 +56,15 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.16 /uv /uvx /bin/
 WORKDIR /app/model-tools
 COPY model-tools/pyproject.toml model-tools/uv.lock ./
 COPY model-tools/src ./src
+# HACK: The host/dev uv lock intentionally remains CPU-only; the evaluator
+# container installs the same Torch release's CUDA build to avoid burdening
+# non-evaluator environments with CUDA dependencies.
 RUN uv sync --locked --no-dev \
+    && uv pip uninstall --python /app/model-tools/.venv/bin/python torch \
+    && uv pip install \
+        --python /app/model-tools/.venv/bin/python \
+        --index-url "${TORCH_CUDA_INDEX_URL}" \
+        "torch==${TORCH_VERSION}+${TORCH_CUDA_VARIANT}" \
     && rm -rf /root/.cache/uv /data/cache/uv /data/home /data/tmp
 
 # Checked-in code and model metadata are image inputs. Runtime acquisition

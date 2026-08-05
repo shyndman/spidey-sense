@@ -1,4 +1,4 @@
-"""Annotate evaluation images with Grounding DINO on the CPU.
+"""Annotate evaluation images with Grounding DINO, preferring CUDA when available.
 
 The stage deliberately keeps source metadata, images, and per-sample outputs inside
 ``EvaluationPaths``. It emits no per-image diagnostics: callers can inspect the
@@ -16,7 +16,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Final, Protocol, TypeGuard
+from typing import Final, Literal, Protocol, TypeGuard
 
 from .contracts import (
     AnnotationRecord,
@@ -297,13 +297,14 @@ def _build_annotation(
     processor: object,
     model: object,
     image: object,
+    device: Literal["cpu", "cuda"] = "cpu",
 ) -> AnnotationRecord:
     if not _is_callable(processor):
         raise TypeError("processor is not callable")
     processed = processor(images=image, text=PROMPT, return_tensors="pt")
     to_device: object = getattr(processed, "to", None)
     if _is_callable(to_device):
-        processed = to_device("cpu")
+        processed = to_device(device)
     if not _is_callable(model):
         raise TypeError("model is not callable")
     if _is_mapping(processed):
@@ -394,8 +395,10 @@ def _write_failure(
         return
 
 
-def _load_runtime(paths: EvaluationPaths) -> tuple[object, object, object]:
-    """Load CPU-only dependencies lazily so pure ranking helpers stay lightweight."""
+def _load_runtime(
+    paths: EvaluationPaths,
+) -> tuple[object, object, object, Literal["cpu", "cuda"]]:
+    """Load detector dependencies lazily and choose one shared execution device."""
     torch = importlib.import_module("torch")
     transformers = importlib.import_module("transformers")
     cache_dir = paths.cache / "huggingface"
@@ -417,17 +420,66 @@ def _load_runtime(paths: EvaluationPaths) -> tuple[object, object, object]:
         CHECKPOINT,
         cache_dir=str(cache_dir),
     )
+    device: Literal["cpu", "cuda"] = "cpu"
+    cuda: object = getattr(torch, "cuda", None)
+    is_available: object = getattr(cuda, "is_available", None)
+    if _is_callable(is_available):
+        available = is_available()
+        if isinstance(available, bool) and available:
+            device = "cuda"
     to_device: object = getattr(model, "to", None)
     if _is_callable(to_device):
-        _ = to_device("cpu")
+        _ = to_device(device)
     eval_method: object = getattr(model, "eval", None)
     if _is_callable(eval_method):
         _ = eval_method()
-    return torch, processor, model
+    return torch, processor, model, device
 
 
 def _manifest_files(paths: EvaluationPaths) -> tuple[Path, ...]:
     return tuple(sorted(paths.manifests.glob("*.json"), key=lambda path: path.name))
+
+
+def _emit_stage_event(
+    event: AggregateEvent,
+    summary: StageSummary | None = None,
+    *,
+    attempted: int | None = None,
+    completed: int | None = None,
+    skipped: int | None = None,
+    failed: int | None = None,
+    processed: int = 0,
+) -> None:
+    if summary is not None:
+        attempted = summary.attempted
+        completed = summary.completed
+        skipped = summary.skipped
+        failed = summary.failed
+    if (
+        attempted is None
+        or completed is None
+        or skipped is None
+        or failed is None
+    ):
+        raise ValueError("stage event counts are required")
+    emit_event(
+        event,
+        stage="annotate",
+        attempted=attempted,
+        completed=completed,
+        skipped=skipped,
+        failed=failed,
+        processed=processed,
+    )
+
+
+def _complete(
+    summary: StageSummary,
+    *,
+    processed: int = 0,
+) -> StageSummary:
+    _emit_stage_event("complete", summary, processed=processed)
+    return summary
 
 
 def annotate(paths: EvaluationPaths) -> StageSummary:
@@ -462,7 +514,7 @@ def annotate(paths: EvaluationPaths) -> StageSummary:
             failed=failed,
         )
     try:
-        torch, processor, model = _load_runtime(paths)
+        torch, processor, model, device = _load_runtime(paths)
     except Exception:
         # Keep model-loading diagnostics out of stdout and failure records.
         for manifest_path, sample in pending:
@@ -532,7 +584,7 @@ def annotate(paths: EvaluationPaths) -> StageSummary:
                 context = _NullContext()
             with source_image, context:
                 image = source_image.convert("RGB")
-                record = _build_annotation(sample, processor, model, image)
+                record = _build_annotation(sample, processor, model, image, device)
             _write_atomic(paths.annotation_path(sample.sample_id), record)
         except Exception:
             failed += 1

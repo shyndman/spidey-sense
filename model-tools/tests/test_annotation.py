@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 
+from model_tools.evaluation import annotation
 from model_tools.evaluation.annotation import (
     MAX_DETECTIONS,
     _build_annotation,
@@ -11,6 +12,7 @@ from model_tools.evaluation.annotation import (
     rank_target_aligned_proposals,
 )
 from model_tools.evaluation.contracts import SampleManifest
+from model_tools.evaluation.paths import EvaluationPaths
 
 
 def test_box_conversion_is_pixel_xyxy_and_finite() -> None:
@@ -110,3 +112,167 @@ def test_build_annotation_emits_contract_record_from_numeric_model_output() -> N
         for detection in record.detections
         for value in detection.box_xyxy
     )
+
+
+def test_load_runtime_selects_cuda_and_moves_model_to_it(tmp_path, monkeypatch) -> None:
+    class FakeCuda:
+        @staticmethod
+        def is_available() -> bool:
+            return True
+
+    class FakeTorch:
+        cuda = FakeCuda()
+
+    class FakeModel:
+        def __init__(self) -> None:
+            self.devices: list[str] = []
+
+        def to(self, device: str) -> FakeModel:
+            self.devices.append(device)
+            return self
+
+        def eval(self) -> FakeModel:
+            return self
+
+    fake_model = FakeModel()
+
+    class FakeProcessorClass:
+        @staticmethod
+        def from_pretrained(_checkpoint: str, *, cache_dir: str) -> object:
+            return object()
+
+    class FakeModelClass:
+        @staticmethod
+        def from_pretrained(_checkpoint: str, *, cache_dir: str) -> FakeModel:
+            return fake_model
+
+    class FakeTransformers:
+        AutoProcessor = FakeProcessorClass
+        AutoModelForZeroShotObjectDetection = FakeModelClass
+
+    modules: dict[str, object] = {
+        "torch": FakeTorch(),
+        "transformers": FakeTransformers,
+    }
+    monkeypatch.setattr(
+        annotation.importlib,
+        "import_module",
+        lambda name: modules[name],
+    )
+
+    _torch, _processor, model, device = annotation._load_runtime(
+        EvaluationPaths(tmp_path)
+    )
+
+    assert device == "cuda"
+    assert model is fake_model
+    assert fake_model.devices == ["cuda"]
+
+
+def test_load_runtime_falls_back_to_cpu_without_cuda(tmp_path, monkeypatch) -> None:
+    class FakeCuda:
+        @staticmethod
+        def is_available() -> bool:
+            return False
+
+    class FakeTorch:
+        cuda = FakeCuda()
+
+    class FakeModel:
+        def __init__(self) -> None:
+            self.devices: list[str] = []
+
+        def to(self, device: str) -> FakeModel:
+            self.devices.append(device)
+            return self
+
+        def eval(self) -> FakeModel:
+            return self
+
+    fake_model = FakeModel()
+
+    class FakeProcessorClass:
+        @staticmethod
+        def from_pretrained(_checkpoint: str, *, cache_dir: str) -> object:
+            return object()
+
+    class FakeModelClass:
+        @staticmethod
+        def from_pretrained(_checkpoint: str, *, cache_dir: str) -> FakeModel:
+            return fake_model
+
+    class FakeTransformers:
+        AutoProcessor = FakeProcessorClass
+        AutoModelForZeroShotObjectDetection = FakeModelClass
+
+    modules: dict[str, object] = {
+        "torch": FakeTorch(),
+        "transformers": FakeTransformers,
+    }
+    monkeypatch.setattr(
+        annotation.importlib,
+        "import_module",
+        lambda name: modules[name],
+    )
+
+    _torch, _processor, model, device = annotation._load_runtime(
+        EvaluationPaths(tmp_path)
+    )
+
+    assert device == "cpu"
+    assert model is fake_model
+    assert fake_model.devices == ["cpu"]
+
+
+def test_build_annotation_moves_processed_inputs_to_selected_device() -> None:
+    class FakeProcessed(dict[str, object]):
+        def __init__(self) -> None:
+            super().__init__(pixel_values=[[0.0]])
+            self.devices: list[str] = []
+
+        def to(self, device: str) -> FakeProcessed:
+            self.devices.append(device)
+            return self
+
+    processed = FakeProcessed()
+
+    class FakeProcessor:
+        def __call__(self, **_kwargs: object) -> FakeProcessed:
+            return processed
+
+    class FakeModel:
+        def __call__(self, **_kwargs: object) -> dict[str, object]:
+            return {
+                "logits": [[-12.0] * 6 for _ in range(MAX_DETECTIONS + 5)],
+                "pred_boxes": [
+                    [0.5, 0.5, 0.2, 0.2] for _ in range(MAX_DETECTIONS + 5)
+                ],
+            }
+
+    sample = SampleManifest(
+        sample_id="sample-device",
+        source="inaturalist",
+        source_id="observation-device",
+        source_category="argiope_aurantia",
+        expected_presence="positive",
+        source_url="source-device",
+        license="cc0",
+        image_relative_path="sample-device.jpg",
+        sha256="a" * 64,
+        perceptual_hash="b" * 16,
+        duplicate_group="group-device",
+        split="calibration",
+        width=64,
+        height=48,
+    )
+
+    _ = _build_annotation(
+        sample,
+        FakeProcessor(),
+        FakeModel(),
+        image=None,
+        device="cuda",
+    )
+
+    assert processed.devices == ["cuda"]
+

@@ -4,14 +4,16 @@ services:
     build:
       context: ..
       dockerfile: validation/Dockerfile
+    gpus: all
+    cpus: 4
     command: ["all"]
     environment:
-      CUDA_VISIBLE_DEVICES: ""
       HF_HUB_DISABLE_TELEMETRY: "1"
       OMP_NUM_THREADS: "1"
       MKL_NUM_THREADS: "1"
       OPENBLAS_NUM_THREADS: "1"
       TOKENIZERS_PARALLELISM: "false"
+      CUDA_VISIBLE_DEVICES: "0"
     volumes:
       - spidey-sense-evaluation-data:/data
 
