@@ -1,0 +1,62 @@
+schema_version = 3
+
+[model]
+id = "mobilenetv4-conv-small-224"
+filename = "mobilenetv4-conv-small-224.onnx"
+url = "https://huggingface.co/timm/mobilenetv4_conv_small.e2400_r224_in1k/resolve/331fb803779522b685cf942e15f914fb6741c1eb/model.safetensors"
+revision = "331fb803779522b685cf942e15f914fb6741c1eb"
+sha256 = "7a7102ec18f62bbfb555b6fe829bbb5af749516b84174926c29ffdfdfc03aec4"
+size_bytes = 15223016
+license = "apache-2.0"
+format = "timm-safetensors"
+opset = 17
+architecture = "mobilenetv4_conv_small.e2400_r224_in1k"
+exporter_version = "1.0.28"
+artifact_sha256 = "afa4b3e2e717a50607beb67a4822c8347bac172ec898ee4e88e6bcc58462f9bb"
+artifact_size_bytes = 15069040
+
+[labels]
+url = "https://raw.githubusercontent.com/onnx/models/4c46cd00fbdb7cd30b6c1c17ab54f2e1f4f7b177/validated/vision/classification/synset.txt"
+revision = "4c46cd00fbdb7cd30b6c1c17ab54f2e1f4f7b177"
+sha256 = "acf75ef0abe89694b19056e0796401068b459c457baa30335f240c7692857355"
+size_bytes = 31675
+count = 1000
+
+[graph.input]
+name = "input"
+data_type = "float32"
+batch_dimension = "batch_size"
+channels = 3
+height = 224
+width = 224
+
+[graph.output]
+name = "output"
+data_type = "float32"
+batch_dimension = "batch_size"
+classes = 1000
+
+[preprocessing]
+color_space = "RGB"
+layout = "NCHW"
+resize_mode = "contain"
+allow_upscale = true
+interpolation = "bilinear"
+padding_mode = "black"
+pixel_scale = 0.0039215686274509803
+mean = [0.485, 0.456, 0.406]
+standard_deviation = [0.229, 0.224, 0.225]
+
+[postprocessing]
+activation = "softmax"
+
+[classes]
+blocked_synsets = [
+  "n01773157",
+  "n01773549",
+  "n01773797",
+  "n01774384",
+  "n01774750",
+  "n01775062",
+]
+debug_synsets = ["n07753592"]
