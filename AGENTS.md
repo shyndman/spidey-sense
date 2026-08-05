@@ -12,4 +12,5 @@
 
 <workflow>
 - Use quick_task agents to write code. They're quick, they're pretty good, but check their work.
+- All model evaluation wiki reports MUST follow `.wiki/MobileNetV2.md` as the structure and readability template while preserving model-specific metrics and details.
 </workflow>
