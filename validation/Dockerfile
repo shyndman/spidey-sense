@@ -1,15 +1,8 @@
 # syntax=docker/dockerfile:1
 
-# Keep JavaScript tooling in a separate build stage so the runtime image can
-# combine the pinned Node 22 runtime with the Python 3.13 base image.
-FROM node:22-bookworm-slim AS extension-dependencies
-
-WORKDIR /build/extension
-RUN npm install --global pnpm@10.34.1
-COPY extension/package.json extension/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --ignore-scripts
-
 FROM python:3.13-slim
+
+COPY --from=ghcr.io/astral-sh/uv:0.11.16 /uv /uvx /bin/
 
 ARG TORCH_VERSION=2.13.0
 ARG TORCH_CUDA_VARIANT=cu130
@@ -32,9 +25,6 @@ ENV PYTHONUNBUFFERED=1 \
     HOME=/data/home \
     TMPDIR=/data/tmp \
     XDG_CACHE_HOME=/data/cache/xdg \
-    COREPACK_HOME=/data/cache/corepack \
-    NODE_COMPILE_CACHE=/data/cache/node \
-    NPM_CONFIG_CACHE=/data/cache/npm \
     HF_HUB_CACHE=/data/cache/huggingface/hub \
     HF_DATASETS_CACHE=/data/cache/huggingface/datasets \
     TRANSFORMERS_CACHE=/data/cache/huggingface/transformers \
@@ -47,11 +37,6 @@ ENV PYTHONUNBUFFERED=1 \
     TOKENIZERS_PARALLELISM=false \
     HF_HUB_DISABLE_TELEMETRY=1 \
     PATH="/app/model-tools/.venv/bin:/usr/local/bin:${PATH}"
-
-# The two official images share the Debian/glibc ABI; copying /usr/local
-# supplies Node 22, npm, and pnpm without replacing Python 3.13.
-COPY --from=extension-dependencies /usr/local /usr/local
-COPY --from=ghcr.io/astral-sh/uv:0.11.16 /uv /uvx /bin/
 
 WORKDIR /app/model-tools
 COPY model-tools/pyproject.toml model-tools/uv.lock ./
@@ -70,11 +55,7 @@ RUN uv sync --locked --no-dev \
 # Checked-in code and model metadata are image inputs. Runtime acquisition
 # writes the corpus, source manifests, annotations, scores, and model bundle
 # only under /data.
-COPY model-tools/model-source.toml ./
-COPY extension/package.json extension/pnpm-lock.yaml /app/extension/
-COPY --from=extension-dependencies /build/extension/node_modules /app/extension/node_modules
-COPY extension/src /app/extension/src
-COPY extension/scripts /app/extension/scripts
+COPY model-tools/model-sources ./model-sources
 
 WORKDIR /app
 ENTRYPOINT ["model-tools-evaluation"]

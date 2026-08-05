@@ -1,4 +1,4 @@
-schema_version = 2
+schema_version = 3
 
 [model]
 id = "mobilenetv2-12"
@@ -7,6 +7,7 @@ url = "https://huggingface.co/onnxmodelzoo/mobilenetv2-12/resolve/23a2a25eaaa6fc
 revision = "23a2a25eaaa6fcd61865414c8a1acf13dda66b7a"
 sha256 = "c0c3f76d93fa3fd6580652a45618618a220fced18babf65774ed169de0432ad5"
 size_bytes = 13964571
+license = "apache-2.0"
 format = "onnx"
 opset = 12
 

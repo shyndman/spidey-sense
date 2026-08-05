@@ -34,6 +34,11 @@ from .metadata import (
     OutputMetadata,
     SourceManifest,
 )
+from .model_artifact import (
+    acquire_model_artifact,
+    artifact_sha256,
+    artifact_size_bytes,
+)
 
 
 class _LoadModel(Protocol):
@@ -110,8 +115,8 @@ def acquire_bundle(manifest_path: Path, output_dir: Path) -> BundlePaths:
 
     if _file_matches(
         paths.model,
-        expected_size=manifest.model.size_bytes,
-        expected_sha256=manifest.model.sha256,
+        expected_size=artifact_size_bytes(manifest),
+        expected_sha256=artifact_sha256(manifest),
     ):
         try:
             verify_bundle(manifest_path, output_dir, run_inference=True)
@@ -120,10 +125,15 @@ def acquire_bundle(manifest_path: Path, output_dir: Path) -> BundlePaths:
         else:
             return paths
     else:
-        _download_model(manifest, paths.model)
-
-    _verify_graph(paths.model, manifest)
-    _run_inference(paths.model, manifest)
+        try:
+            acquire_model_artifact(
+                manifest,
+                paths.model,
+                lambda path: _validate_artifact(path, manifest),
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            raise AcquisitionError(f"model acquisition failed: {error}") from error
+    _validate_artifact(paths.model, manifest)
     labels = _download_labels(manifest)
     metadata = _build_metadata(manifest, labels)
     _write_metadata(metadata, paths.metadata)
@@ -143,8 +153,8 @@ def verify_bundle(
     paths = _bundle_paths(manifest, bundle_dir)
     _require_file(
         paths.model,
-        expected_size=manifest.model.size_bytes,
-        expected_sha256=manifest.model.sha256,
+        expected_size=artifact_size_bytes(manifest),
+        expected_sha256=artifact_sha256(manifest),
     )
     _verify_graph(paths.model, manifest)
     metadata = _load_metadata(paths.metadata)
@@ -200,31 +210,11 @@ def _open_url(url: str) -> Generator[BinaryIO]:
         raise AcquisitionError(f"download failed for {url}: {error}") from error
 
 
-def _download_model(manifest: SourceManifest, destination: Path) -> None:
-    partial = destination.with_name(f".{destination.name}{PART_SUFFIX}")
-    digest = hashlib.sha256()
-    size = 0
-    try:
-        with (
-            _open_url(str(manifest.model.url)) as response,
-            partial.open("wb") as target,
-        ):
-            while chunk := response.read(DOWNLOAD_CHUNK_BYTES):
-                target.write(chunk)
-                digest.update(chunk)
-                size += len(chunk)
-        if (
-            size != manifest.model.size_bytes
-            or digest.hexdigest() != manifest.model.sha256
-        ):
-            raise AcquisitionError(
-                "downloaded model failed size or SHA-256 verification"
-            )
-        _verify_graph(partial, manifest)
-        _run_inference(partial, manifest)
-        partial.replace(destination)
-    finally:
-        partial.unlink(missing_ok=True)
+def _validate_artifact(path: Path, manifest: SourceManifest) -> None:
+    """Validate a graph and inference before promoting a generated artifact."""
+
+    _verify_graph(path, manifest)
+    _run_inference(path, manifest)
 
 
 def _download_labels(manifest: SourceManifest) -> tuple[LabelRecord, ...]:
@@ -326,7 +316,7 @@ def _run_inference(path: Path, manifest: SourceManifest) -> None:
         )
         tensor: NDArray[np.float32] = np.zeros(
             (
-                1,
+                2,
                 manifest.graph.input.channels,
                 manifest.graph.input.height,
                 manifest.graph.input.width,
@@ -343,7 +333,7 @@ def _run_inference(path: Path, manifest: SourceManifest) -> None:
     if not isinstance(raw_result, np.ndarray):
         raise AcquisitionError("inference output is not a dense tensor")
     result = cast(NDArray[np.float32], raw_result)
-    expected_shape = (1, manifest.graph.output.classes)
+    expected_shape = (2, manifest.graph.output.classes)
     if result.shape != expected_shape or not bool(np.all(np.isfinite(result))):
         raise AcquisitionError(
             f"inference returned invalid output: shape={result.shape}"
@@ -354,7 +344,7 @@ def _run_inference(path: Path, manifest: SourceManifest) -> None:
     if not bool(
         np.allclose(
             np.sum(probabilities, axis=1),
-            np.ones(1),
+            np.ones(2),
             atol=SOFTMAX_SUM_TOLERANCE,
             rtol=0,
         )
@@ -399,9 +389,9 @@ def _build_model_metadata(manifest: SourceManifest) -> ModelMetadata:
     return ModelMetadata(
         id=source.id,
         filename=source.filename,
-        sha256=source.sha256,
-        size_bytes=source.size_bytes,
-        format=source.format,
+        sha256=artifact_sha256(manifest),
+        size_bytes=artifact_size_bytes(manifest),
+        format="onnx",
         opset=source.opset,
         source_url=source.url,
         source_revision=source.revision,

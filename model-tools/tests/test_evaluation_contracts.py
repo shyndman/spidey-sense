@@ -82,6 +82,7 @@ def test_detection_and_annotation_bounds() -> None:
 
 def test_score_and_stage_lengths() -> None:
     score = ScoreRecord(
+        model_id="evaluation-model",
         sample_id="sample-1",
         probabilities=(0.001,) * 1000,
         blocked_score=0.2,
@@ -90,6 +91,7 @@ def test_score_and_stage_lengths() -> None:
     assert len(score.probabilities) == 1000
     with pytest.raises(ValidationError):
         ScoreRecord(
+            model_id="evaluation-model",
             sample_id="sample-1",
             probabilities=(0.001,) * 999,
             blocked_score=0.2,
@@ -104,6 +106,7 @@ def test_score_and_stage_lengths() -> None:
 def test_paths_create_layout_and_atomic_json(tmp_path: Path) -> None:
     paths = EvaluationPaths(tmp_path / "data")
     paths.ensure()
+    paths.ensure_model("evaluation-model")
     expected = {
         "images",
         "manifests",
@@ -118,6 +121,12 @@ def test_paths_create_layout_and_atomic_json(tmp_path: Path) -> None:
     }
     assert {path.name for path in paths.root.iterdir()} == expected
     assert paths.image_path("images/sample-1.jpg") == paths.images / "sample-1.jpg"
+    assert paths.score_path("evaluation-model", "sample-1") == (
+        paths.scores / "evaluation-model" / "sample-1.json"
+    )
+    assert paths.model_error_path("evaluation-model", "sample-1") == (
+        paths.errors / "evaluation-model" / "score-sample-1.json"
+    )
     destination = paths.manifest_path("sample-1")
     atomic_write_json(destination, _manifest())
     assert destination.exists()

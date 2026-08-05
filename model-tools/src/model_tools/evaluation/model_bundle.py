@@ -1,49 +1,75 @@
-"""Provision the pinned model bundle used by evaluation."""
+"""Provision every pinned model bundle used by evaluation."""
 
 from __future__ import annotations
 
 import os
-from importlib import import_module
 from pathlib import Path
-from typing import Protocol, TypeGuard
+
+from model_tools.acquire import acquire_bundle, load_source_manifest
+from model_tools.metadata import ArtifactMetadata
 
 from .paths import EvaluationPaths
 
 
-class _BundleAcquirer(Protocol):
-    def __call__(self, manifest_path: Path, destination: Path) -> object: ...
+def _manifest_paths() -> tuple[Path, ...]:
+    configured = os.environ.get("MODEL_SOURCE_MANIFEST")
+    if configured:
+        path = Path(configured)
+        return (path,) if path.is_file() else ()
 
-
-class _BundleModule(Protocol):
-    acquire_bundle: _BundleAcquirer
-
-
-def _is_bundle_module(value: object) -> TypeGuard[_BundleModule]:
-    acquire_bundle: object = getattr(value, "acquire_bundle", None)
-    return callable(acquire_bundle)
+    candidates = (
+        Path("/app/model-tools/model-sources"),
+        Path(__file__).resolve().parents[3] / "model-sources",
+    )
+    directory = next((path for path in candidates if path.is_dir()), None)
+    if directory is None:
+        return ()
+    return tuple(sorted(directory.glob("*.toml"), key=lambda path: path.name))
 
 
 def provision_model_bundle(paths: EvaluationPaths) -> bool:
-    """Ensure the pinned MobileNet bundle exists in the persistent volume."""
+    """Ensure every registered model has an isolated verified bundle."""
 
-    configured = os.environ.get("MODEL_SOURCE_MANIFEST")
-    candidates = ((Path(configured),) if configured else ()) + (
-        Path("/app/model-tools/model-source.toml"),
-        Path(__file__).resolve().parents[3] / "model-source.toml",
-    )
-    manifest_path = next(
-        (candidate for candidate in candidates if candidate.is_file()), None
-    )
-    if manifest_path is None:
+    manifests = _manifest_paths()
+    if not manifests:
         return False
     try:
-        module = import_module("model_tools.acquire")
-        if not _is_bundle_module(module):
-            return False
-        _ = module.acquire_bundle(manifest_path, paths.models)
+        model_ids: set[str] = set()
+        for manifest_path in manifests:
+            manifest = load_source_manifest(manifest_path)
+            model_id = manifest.model.id
+            if model_id in model_ids:
+                return False
+            model_ids.add(model_id)
+            _ = acquire_bundle(manifest_path, paths.model_bundle(model_id))
     except Exception:
         return False
     return True
 
 
-__all__ = ["provision_model_bundle"]
+def registered_model_ids(paths: EvaluationPaths) -> tuple[str, ...]:
+    """Return model IDs whose isolated metadata validates exactly."""
+
+    manifests = _manifest_paths()
+    if not manifests:
+        raise ValueError("no registered model manifests")
+    model_ids: list[str] = []
+    seen: set[str] = set()
+    for manifest_path in manifests:
+        manifest = load_source_manifest(manifest_path)
+        model_id = manifest.model.id
+        if model_id in seen:
+            raise ValueError(f"duplicate registered model ID: {model_id}")
+        seen.add(model_id)
+        metadata_path = paths.model_bundle(model_id) / f"{model_id}.metadata.json"
+        try:
+            metadata = ArtifactMetadata.model_validate_json(metadata_path.read_bytes())
+        except (OSError, ValueError) as error:
+            raise ValueError(f"invalid registered model bundle: {model_id}") from error
+        if metadata.model.id != model_id:
+            raise ValueError(f"model bundle ID does not match manifest: {model_id}")
+        model_ids.append(model_id)
+    return tuple(model_ids)
+
+
+__all__ = ["provision_model_bundle", "registered_model_ids"]

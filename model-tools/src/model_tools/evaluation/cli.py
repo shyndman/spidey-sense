@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -58,51 +57,27 @@ def _emit(payload: object) -> None:
     )
 
 
-def _run_score(paths: EvaluationPaths) -> StageSummary:
-    """Invoke the TypeScript scorer with live stderr and suppressed stdout."""
-    manifest_ids: set[str] = {path.stem for path in paths.manifests.glob("*.json")}
+def _run_score_model(paths: EvaluationPaths, model_id: str) -> StageSummary:
+    """Score one isolated registered model in the validation process."""
 
-    before_ids = {
-        path.stem for path in paths.scores.glob("*.json") if path.stem in manifest_ids
-    }
-    command = [
-        "pnpm",
-        "--dir",
-        "/app/extension",
-        "exec",
-        "tsx",
-        "scripts/evaluate-model.ts",
-        "--data-dir",
-        str(paths.root),
+    from .scoring import score_model
+
+    return score_model(paths, model_id)
+
+
+def _run_score(paths: EvaluationPaths) -> StageSummary:
+    """Score every registered model and combine only aggregate counters."""
+
+    from .model_bundle import registered_model_ids
+
+    summaries = [
+        _run_score_model(paths, model_id) for model_id in registered_model_ids(paths)
     ]
-    try:
-        _ = subprocess.run(
-            command,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=None,
-            text=True,
-        )
-    except (OSError, subprocess.CalledProcessError):
-        skipped = len(before_ids)
-        failed = max(1, len(manifest_ids) - skipped)
-        return StageSummary(
-            attempted=skipped + failed,
-            completed=0,
-            skipped=skipped,
-            failed=failed,
-        )
-    after_ids = {
-        path.stem for path in paths.scores.glob("*.json") if path.stem in manifest_ids
-    }
-    skipped = len(before_ids)
-    completed = len(after_ids - before_ids)
-    failed = len(manifest_ids) - skipped - completed
     return StageSummary(
-        attempted=len(manifest_ids),
-        completed=completed,
-        skipped=skipped,
-        failed=failed,
+        attempted=sum(summary.attempted for summary in summaries),
+        completed=sum(summary.completed for summary in summaries),
+        skipped=sum(summary.skipped for summary in summaries),
+        failed=sum(summary.failed for summary in summaries),
     )
 
 

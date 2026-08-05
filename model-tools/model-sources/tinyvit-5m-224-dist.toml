@@ -1,0 +1,62 @@
+schema_version = 3
+
+[model]
+id = "tinyvit-5m-224-dist"
+filename = "tinyvit-5m-224-dist.onnx"
+url = "https://huggingface.co/timm/tiny_vit_5m_224.dist_in22k_ft_in1k/resolve/b46989c2a2c95e7612b919a6f5e2cd7dcf4f1271/model.safetensors"
+revision = "b46989c2a2c95e7612b919a6f5e2cd7dcf4f1271"
+sha256 = "6887cbcb87b340515b477b1582bdada6a7cafff15720dd1a9c102b3aaa579c82"
+size_bytes = 21641032
+license = "apache-2.0"
+format = "timm-safetensors"
+opset = 17
+architecture = "tiny_vit_5m_224.dist_in22k_ft_in1k"
+exporter_version = "1.0.28"
+artifact_sha256 = "ab65a070d1540d6beb9543193d470ac0f2b5f3063b411783856d0c4c45a1e44f"
+artifact_size_bytes = 22139919
+
+[labels]
+url = "https://raw.githubusercontent.com/onnx/models/4c46cd00fbdb7cd30b6c1c17ab54f2e1f4f7b177/validated/vision/classification/synset.txt"
+revision = "4c46cd00fbdb7cd30b6c1c17ab54f2e1f4f7b177"
+sha256 = "acf75ef0abe89694b19056e0796401068b459c457baa30335f240c7692857355"
+size_bytes = 31675
+count = 1000
+
+[graph.input]
+name = "input"
+data_type = "float32"
+batch_dimension = "batch_size"
+channels = 3
+height = 224
+width = 224
+
+[graph.output]
+name = "output"
+data_type = "float32"
+batch_dimension = "batch_size"
+classes = 1000
+
+[preprocessing]
+color_space = "RGB"
+layout = "NCHW"
+resize_mode = "contain"
+allow_upscale = true
+interpolation = "bilinear"
+padding_mode = "black"
+pixel_scale = 0.0039215686274509803
+mean = [0.485, 0.456, 0.406]
+standard_deviation = [0.229, 0.224, 0.225]
+
+[postprocessing]
+activation = "softmax"
+
+[classes]
+blocked_synsets = [
+  "n01773157",
+  "n01773549",
+  "n01773797",
+  "n01774384",
+  "n01774750",
+  "n01775062",
+]
+debug_synsets = ["n07753592"]

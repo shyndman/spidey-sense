@@ -124,18 +124,19 @@ class AnnotationRecord(EvaluationModel):
 
 
 class ScoreRecord(EvaluationModel):
-    """All 1,000 MobileNetV2 class probabilities for one sample."""
+    """One model's 1,000 output probabilities for one sample."""
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
+    model_id: str
     sample_id: str
     probabilities: tuple[Probability, ...] = Field(min_length=1000, max_length=1000)
     blocked_score: Probability
     top_index: Annotated[NonNegativeInt, Field(le=999)]
 
-    @field_validator("sample_id")
+    @field_validator("model_id", "sample_id")
     @classmethod
-    def non_empty_sample_id(cls, value: str) -> str:
-        """Reject records that cannot be joined to a manifest."""
+    def non_empty_join_id(cls, value: str) -> str:
+        """Reject records that cannot be joined to a model and manifest."""
 
         if not value:
             raise ValueError("must not be empty")

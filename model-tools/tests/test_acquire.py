@@ -22,6 +22,7 @@ from model_tools.acquire import (
     load_source_manifest,
     verify_bundle,
 )
+from model_tools.metadata import TimmSafetensorsModelSource
 
 _BLOCKED_SYNSET: Final = "n00000001"
 _DEBUG_SYNSET: Final = "n00000002"
@@ -113,7 +114,7 @@ def _write_manifest(
     input_height: int = 2,
 ) -> None:
     path.write_text(
-        f'''schema_version = 2
+        f'''schema_version = 3
 
 [model]
 id = "synthetic-model"
@@ -122,6 +123,7 @@ url = "{model_url}"
 revision = "test-model-revision"
 sha256 = "{model_sha256 or _sha256(model_payload)}"
 size_bytes = {model_size_bytes if model_size_bytes is not None else len(model_payload)}
+license = "apache-2.0"
 format = "onnx"
 opset = 12
 
@@ -169,7 +171,7 @@ debug_synsets = ["{_DEBUG_SYNSET}"]
 
 
 def test_checked_in_source_manifest_is_strictly_valid() -> None:
-    manifest_path = Path(__file__).parents[1] / "model-source.toml"
+    manifest_path = Path(__file__).parents[1] / "model-sources/mobilenetv2-12.toml"
 
     manifest = load_source_manifest(manifest_path)
 
@@ -186,9 +188,25 @@ def test_checked_in_source_manifest_is_strictly_valid() -> None:
     )
 
 
+def test_checked_in_tinyvit_manifest_pins_conversion_contract() -> None:
+    manifest_path = Path(__file__).parents[1] / "model-sources/tinyvit-5m-224-dist.toml"
+
+    manifest = load_source_manifest(manifest_path)
+
+    assert isinstance(manifest.model, TimmSafetensorsModelSource)
+    assert manifest.model.id == "tinyvit-5m-224-dist"
+    assert manifest.model.revision == "b46989c2a2c95e7612b919a6f5e2cd7dcf4f1271"
+    assert manifest.model.exporter_version == "1.0.28"
+    assert manifest.model.artifact_sha256 == (
+        "ab65a070d1540d6beb9543193d470ac0f2b5f3063b411783856d0c4c45a1e44f"
+    )
+    assert manifest.graph.input.height == 224
+    assert manifest.graph.output.classes == 1000
+
+
 def test_invalid_source_manifest_is_rejected(tmp_path: Path) -> None:
     manifest_path = tmp_path / "invalid.toml"
-    manifest_path.write_text("schema_version = 2\n", encoding="utf-8")
+    manifest_path.write_text("schema_version = 3\n", encoding="utf-8")
 
     with pytest.raises(AcquisitionError, match="invalid source manifest"):
         load_source_manifest(manifest_path)

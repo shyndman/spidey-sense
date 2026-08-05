@@ -12,7 +12,9 @@ from model_tools.evaluation.contracts import (
     ScoreRecord,
 )
 from model_tools.evaluation.paths import EvaluationPaths
-from model_tools.evaluation.reporting import report
+from model_tools.evaluation.reporting import _report_model
+
+_MODEL_ID = "evaluation-model"
 
 
 def _manifest(
@@ -62,6 +64,7 @@ def _annotation(
 def _score(sample_id: str, blocked_score: float) -> ScoreRecord:
     probabilities = tuple((index + 1) / 1001 for index in range(1000))
     return ScoreRecord(
+        model_id=_MODEL_ID,
         sample_id=sample_id,
         probabilities=probabilities,
         blocked_score=blocked_score,
@@ -83,7 +86,7 @@ def _write_fixture(paths: EvaluationPaths) -> None:
         (
             _manifest(
                 "cal-positive",
-                category="argiope_aurantia",
+                category="target-class-a",
                 expected_presence="positive",
                 split="calibration",
             ),
@@ -93,8 +96,8 @@ def _write_fixture(paths: EvaluationPaths) -> None:
         (
             _manifest(
                 "cal-negative",
-                category="insecta",
-                expected_presence="hard_negative",
+                category="ordinary-negative",
+                expected_presence="broad_negative",
                 split="calibration",
             ),
             _annotation("cal-negative", 0.25, (0, 0, 20, 20)),
@@ -103,7 +106,7 @@ def _write_fixture(paths: EvaluationPaths) -> None:
         (
             _manifest(
                 "test-positive",
-                category="theraphosidae",
+                category="target-class-b",
                 expected_presence="positive",
                 split="test",
             ),
@@ -113,7 +116,7 @@ def _write_fixture(paths: EvaluationPaths) -> None:
         (
             _manifest(
                 "test-negative",
-                category="crabs",
+                category="ordinary-negative",
                 expected_presence="broad_negative",
                 split="test",
             ),
@@ -128,13 +131,13 @@ def _write_fixture(paths: EvaluationPaths) -> None:
     for manifest, annotation, score in records:
         _write_record(paths.manifests, manifest)
         _write_record(paths.annotations, annotation)
-        _write_record(paths.scores, score)
+        _write_record(paths.model_scores(_MODEL_ID), score)
 
 
 def test_report_keeps_split_curves_and_strata_aggregate_only(tmp_path: Path) -> None:
     paths = EvaluationPaths(tmp_path)
     _write_fixture(paths)
-    result = report(paths)
+    result = _report_model(paths, _MODEL_ID)
 
     assert result["stage_summary"] == {
         "attempted": 4,
@@ -160,7 +163,7 @@ def test_report_keeps_split_curves_and_strata_aggregate_only(tmp_path: Path) -> 
     assert curves["test"][1]["fn"] == 0
     assert curves["test"][1]["fp"] == 0
     assert curves["test"][1]["tn"] == 1
-    assert "argiope_aurantia" in result["by_source_category"]
+    assert "target-class-a" in result["by_source_category"]
     assert "positive" in result["by_expected_presence"]
 
     deciles = result["detector_confidence_deciles"]
@@ -177,10 +180,12 @@ def test_report_keeps_split_curves_and_strata_aggregate_only(tmp_path: Path) -> 
     assert area_bins["relative_image_area"][1]["count"] == 2
     assert area_bins["relative_image_area"][4]["count"] == 1
     assert area_bins["detector_miss_count"] == 1
-    assert paths.report_path().is_file()
+    assert paths.model_report_path(_MODEL_ID).is_file()
     assert not list(paths.reports.glob("*.part"))
 
-    serialized = json.loads(paths.report_path().read_text(encoding="utf-8"))
+    serialized = json.loads(
+        paths.model_report_path(_MODEL_ID).read_text(encoding="utf-8")
+    )
     assert serialized == result
 
     def keys(value: object) -> list[str]:
@@ -209,17 +214,17 @@ def test_report_accounts_for_missing_invalid_and_unmatched_records(
     paths = EvaluationPaths(tmp_path)
     manifest = _manifest(
         "missing",
-        category="ticks_and_mites",
+        category="lookalike-class",
         expected_presence="hard_negative",
         split="test",
     )
     _write_record(paths.manifests, manifest)
     paths.annotations.mkdir(parents=True, exist_ok=True)
     (paths.annotations / "invalid.json").write_text("not json", encoding="utf-8")
-    paths.scores.mkdir(parents=True, exist_ok=True)
-    _write_record(paths.scores, _score("extra", 0.4))
+    paths.model_scores(_MODEL_ID).mkdir(parents=True, exist_ok=True)
+    _write_record(paths.model_scores(_MODEL_ID), _score("extra", 0.4))
 
-    result = report(paths)
+    result = _report_model(paths, _MODEL_ID)
 
     assert result["record_accounting"]["joined_records"] == 0
     assert result["failures"]["total"] == 4

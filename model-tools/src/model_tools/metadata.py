@@ -5,11 +5,12 @@ the browser runtime: it records the exact graph, preprocessing, labels, and sema
 class groups needed to consume the model without duplicating constants in TypeScript.
 """
 
-from typing import Literal, cast
+from typing import Annotated, Literal, cast
 
 from pydantic import (
     BaseModel,
     ConfigDict,
+    Field,
     HttpUrl,
     NonNegativeInt,
     PositiveInt,
@@ -41,8 +42,8 @@ class ContractModel(BaseModel):
     )
 
 
-class ModelSource(ContractModel):
-    """Immutable provenance and integrity facts for the ONNX artifact."""
+class _ModelSourceBase(ContractModel):
+    """Shared immutable provenance for one model source."""
 
     id: str
     filename: str
@@ -50,8 +51,30 @@ class ModelSource(ContractModel):
     revision: str
     sha256: Sha256
     size_bytes: PositiveInt
-    format: Literal["onnx"]
+    license: str
     opset: PositiveInt
+
+
+class OnnxModelSource(_ModelSourceBase):
+    """An upstream ONNX artifact used without conversion."""
+
+    format: Literal["onnx"]
+
+
+class TimmSafetensorsModelSource(_ModelSourceBase):
+    """Pinned timm weights and the deterministic ONNX artifact they produce."""
+
+    format: Literal["timm-safetensors"]
+    architecture: str
+    exporter_version: str
+    artifact_sha256: Sha256
+    artifact_size_bytes: PositiveInt
+
+
+ModelSource = Annotated[
+    OnnxModelSource | TimmSafetensorsModelSource,
+    Field(discriminator="format"),
+]
 
 
 class LabelsSource(ContractModel):
@@ -133,7 +156,7 @@ class ClassesSource(ContractModel):
 class SourceManifest(ContractModel):
     """Complete checked-in specification for recreating the model bundle."""
 
-    schema_version: Literal[2]
+    schema_version: Literal[3]
     model: ModelSource
     labels: LabelsSource
     graph: GraphSource
@@ -143,7 +166,7 @@ class SourceManifest(ContractModel):
 
 
 class ModelMetadata(ContractModel):
-    """Verified model artifact facts exposed to the extension."""
+    """Verified ONNX artifact facts exposed to runtime consumers."""
 
     id: str
     filename: str

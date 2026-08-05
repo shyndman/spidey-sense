@@ -16,6 +16,7 @@ from statistics import fmean
 from typing import Final, Literal
 
 from .contracts import AnnotationRecord, SampleManifest, ScoreRecord
+from .operating_points import Confusion, confusion, operating_points
 from .paths import EvaluationPaths
 
 _CONFIDENCE_BIN_COUNT: Final[int] = 10
@@ -170,46 +171,19 @@ def _score_stats(values: list[float]) -> dict[str, object]:
     }
 
 
-def _confusion(values: list[tuple[bool, float]], threshold: float) -> dict[str, object]:
-    tp = fn = fp = tn = 0
-    for is_positive, score in values:
-        predicted_positive = score >= threshold
-        if is_positive and predicted_positive:
-            tp += 1
-        elif is_positive:
-            fn += 1
-        elif predicted_positive:
-            fp += 1
-        else:
-            tn += 1
-    positives = tp + fn
-    negatives = fp + tn
-    predicted_positives = tp + fp
-    return {
-        "threshold": threshold,
-        "tp": tp,
-        "fn": fn,
-        "fp": fp,
-        "tn": tn,
-        "tpr": tp / positives if positives else None,
-        "fpr": fp / negatives if negatives else None,
-        "precision": tp / predicted_positives if predicted_positives else None,
-    }
-
-
 def _threshold_curves(
     samples: list[tuple[SampleManifest, ScoreRecord]],
-) -> dict[str, list[dict[str, object]]]:
+) -> dict[str, list[Confusion]]:
     by_split: dict[str, list[tuple[bool, float]]] = defaultdict(list)
     for manifest, score in samples:
         by_split[manifest.split].append(
             (manifest.expected_presence == "positive", score.blocked_score)
         )
-    curves: dict[str, list[dict[str, object]]] = {}
+    curves: dict[str, list[Confusion]] = {}
     for split in ("calibration", "test"):
         values = by_split.get(split, [])
         thresholds = sorted({score for _, score in values})
-        curves[split] = [_confusion(values, threshold) for threshold in thresholds]
+        curves[split] = [confusion(values, threshold) for threshold in thresholds]
     return curves
 
 
@@ -328,12 +302,23 @@ def _confidence_deciles(
     return [bucket.as_dict() for bucket in buckets]
 
 
-def _report_path(paths: EvaluationPaths) -> Path:
-    return paths.report_path()
+def _standard_operating_points(
+    samples: list[tuple[SampleManifest, ScoreRecord]],
+) -> dict[str, object]:
+    """Return no objectives only when required calibration groups are absent."""
+
+    calibration_presence = {
+        manifest.expected_presence
+        for manifest, _score in samples
+        if manifest.split == "calibration"
+    }
+    if not {"positive", "broad_negative"}.issubset(calibration_presence):
+        return {}
+    return operating_points(samples)
 
 
-def report(paths: EvaluationPaths) -> dict[str, object]:
-    """Join valid stage records and emit deterministic aggregate numeric evidence."""
+def _report_model(paths: EvaluationPaths, model_id: str) -> dict[str, object]:
+    """Join one model's records and emit deterministic aggregate evidence."""
     paths.ensure()
     manifests, manifest_failures, manifest_attempted = _read_records(
         paths.manifests,
@@ -344,13 +329,19 @@ def report(paths: EvaluationPaths) -> dict[str, object]:
         AnnotationRecord,
     )
     scores, score_failures, score_attempted = _read_records(
-        paths.scores,
+        paths.model_scores(model_id),
         ScoreRecord,
     )
     failures: Counter[str] = Counter()
     failures.update(manifest_failures)
     failures.update(annotation_failures)
     failures.update(score_failures)
+    mismatched_score_ids = [
+        sample_id for sample_id, score in scores.items() if score.model_id != model_id
+    ]
+    for sample_id in mismatched_score_ids:
+        del scores[sample_id]
+    failures["wrong_model_score"] += len(mismatched_score_ids)
 
     joined: list[tuple[SampleManifest, AnnotationRecord, ScoreRecord]] = []
     for sample_id in sorted(manifests):
@@ -367,7 +358,8 @@ def report(paths: EvaluationPaths) -> dict[str, object]:
 
     pairs = [(manifest, score) for manifest, _annotation, score in joined]
     report_data: dict[str, object] = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "model_id": model_id,
         "stage_summary": {
             "attempted": len(joined) + sum(failures.values()),
             "completed": len(joined),
@@ -390,13 +382,27 @@ def report(paths: EvaluationPaths) -> dict[str, object]:
             not annotation.detections for _, annotation, _ in joined
         ),
         "threshold_curves": _threshold_curves(pairs),
+        "standard_operating_points": _standard_operating_points(pairs),
         "by_source_category": _category_stats(pairs, "source_category"),
         "by_expected_presence": _category_stats(pairs, "expected_presence"),
         "detector_confidence_deciles": _confidence_deciles(joined),
         "top_box_area_bins": _area_buckets(joined),
     }
-    _atomic_write_json(_report_path(paths), report_data)
+    _atomic_write_json(paths.model_report_path(model_id), report_data)
     return report_data
+
+
+def report(paths: EvaluationPaths) -> dict[str, object]:
+    """Report every registered model without mixing model-owned records."""
+
+    from .model_bundle import registered_model_ids
+
+    paths.ensure()
+    reports = {
+        model_id: _report_model(paths, model_id)
+        for model_id in registered_model_ids(paths)
+    }
+    return {"schema_version": 2, "models": reports}
 
 
 __all__ = ["report"]
