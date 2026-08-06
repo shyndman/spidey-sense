@@ -526,3 +526,132 @@ def test_checked_in_mobilenetv4_conv_small_manifest_pins_conversion_contract() -
         "n01775062",
     )
     assert manifest.classes.debug_synsets == ("n07753592",)
+
+
+def test_checked_in_mobilenetv3_small_manifest_pins_conversion_contract() -> None:
+    manifest_path = (
+        Path(__file__).parents[1] / "model-sources/mobilenetv3-small-100-224.toml"
+    )
+
+    manifest = load_source_manifest(manifest_path)
+
+    assert isinstance(manifest.model, TimmSafetensorsModelSource)
+    assert manifest.model.id == "mobilenetv3-small-100-224"
+    assert manifest.model.filename == "mobilenetv3-small-100-224.onnx"
+    assert manifest.model.license == "apache-2.0"
+    assert manifest.model.format == "timm-safetensors"
+    assert manifest.model.architecture == "tf_mobilenetv3_small_100.in1k"
+    assert manifest.model.revision == "6ea7c1da494cbf1ef6682a942221a9fdc3a78126"
+    assert manifest.model.sha256 == (
+        "7567f2534992e11894549df6550a4ad251bd1d6997b2f24651fdeef87f45ca90"
+    )
+    assert manifest.model.size_bytes == 10241912
+    assert manifest.model.exporter_version == "1.0.28"
+    assert manifest.model.opset == 17
+    assert manifest.model.artifact_sha256 == (
+        "b533cd20a4246f0154c5bf3edce6085c27deab42175793f9f7030d691c0f11db"
+    )
+    assert manifest.model.artifact_size_bytes == 10249621
+    assert manifest.graph.input.name == "input"
+    assert manifest.graph.input.data_type == "float32"
+    assert manifest.graph.input.batch_dimension == "batch_size"
+    assert (
+        manifest.graph.input.channels,
+        manifest.graph.input.height,
+        manifest.graph.input.width,
+    ) == (3, 224, 224)
+    assert manifest.graph.output.name == "output"
+    assert manifest.graph.output.data_type == "float32"
+    assert manifest.graph.output.batch_dimension == "batch_size"
+    assert manifest.graph.output.classes == 1000
+    assert manifest.preprocessing.color_space == "RGB"
+    assert manifest.preprocessing.layout == "NCHW"
+    assert manifest.preprocessing.resize_mode == "contain"
+    assert manifest.preprocessing.allow_upscale is True
+    assert manifest.preprocessing.interpolation == "bilinear"
+    assert manifest.preprocessing.padding_mode == "black"
+    assert manifest.preprocessing.pixel_scale == 0.0039215686274509803
+    assert manifest.preprocessing.mean == (0.5, 0.5, 0.5)
+    assert manifest.preprocessing.standard_deviation == (0.5, 0.5, 0.5)
+    assert manifest.postprocessing.activation == "softmax"
+    assert manifest.labels.revision == "4c46cd00fbdb7cd30b6c1c17ab54f2e1f4f7b177"
+    assert manifest.labels.sha256 == (
+        "acf75ef0abe89694b19056e0796401068b459c457baa30335f240c7692857355"
+    )
+    assert manifest.labels.size_bytes == 31675
+    assert manifest.labels.count == 1000
+    assert manifest.classes.blocked_synsets == (
+        "n01773157",
+        "n01773549",
+        "n01773797",
+        "n01774384",
+        "n01774750",
+        "n01775062",
+    )
+    assert manifest.classes.debug_synsets == ("n07753592",)
+
+
+def test_checked_in_mobilenetv3_large_manifest_pins_conversion_contract() -> None:
+    manifest_path = (
+        Path(__file__).parents[1] / "model-sources/mobilenetv3-large-100-224.toml"
+    )
+
+    manifest = load_source_manifest(manifest_path)
+
+    assert isinstance(manifest.model, TimmSafetensorsModelSource)
+    assert manifest.model.id == "mobilenetv3-large-100-224"
+    assert manifest.model.filename == "mobilenetv3-large-100-224.onnx"
+    assert manifest.model.license == "apache-2.0"
+    assert manifest.model.format == "timm-safetensors"
+    assert (
+        manifest.model.architecture
+        == "mobilenetv3_large_100.ra4_e3600_r224_in1k"
+    )
+    assert manifest.model.revision == "26a545b7c557e54fa13caff7e76da391f6bcbc1a"
+    assert manifest.model.sha256 == (
+        "bd595a2d59301fc6264c4aabb203f93ec17b0aa7bdd7532c8d9e1cf07dfc9bdc"
+    )
+    assert manifest.model.size_bytes == 22058008
+    assert manifest.model.exporter_version == "1.0.28"
+    assert manifest.model.opset == 17
+    assert manifest.model.artifact_sha256 == (
+        "aea18dca394e39dcc73b408d5493e3e980d38db351b7d97061bc97967a7294ed"
+    )
+    assert manifest.model.artifact_size_bytes == 21919309
+    assert manifest.graph.input.name == "input"
+    assert manifest.graph.input.data_type == "float32"
+    assert manifest.graph.input.batch_dimension == "batch_size"
+    assert (
+        manifest.graph.input.channels,
+        manifest.graph.input.height,
+        manifest.graph.input.width,
+    ) == (3, 224, 224)
+    assert manifest.graph.output.name == "output"
+    assert manifest.graph.output.data_type == "float32"
+    assert manifest.graph.output.batch_dimension == "batch_size"
+    assert manifest.graph.output.classes == 1000
+    assert manifest.preprocessing.color_space == "RGB"
+    assert manifest.preprocessing.layout == "NCHW"
+    assert manifest.preprocessing.resize_mode == "contain"
+    assert manifest.preprocessing.allow_upscale is True
+    assert manifest.preprocessing.interpolation == "bilinear"
+    assert manifest.preprocessing.padding_mode == "black"
+    assert manifest.preprocessing.pixel_scale == 0.0039215686274509803
+    assert manifest.preprocessing.mean == (0.5, 0.5, 0.5)
+    assert manifest.preprocessing.standard_deviation == (0.5, 0.5, 0.5)
+    assert manifest.postprocessing.activation == "softmax"
+    assert manifest.labels.revision == "4c46cd00fbdb7cd30b6c1c17ab54f2e1f4f7b177"
+    assert manifest.labels.sha256 == (
+        "acf75ef0abe89694b19056e0796401068b459c457baa30335f240c7692857355"
+    )
+    assert manifest.labels.size_bytes == 31675
+    assert manifest.labels.count == 1000
+    assert manifest.classes.blocked_synsets == (
+        "n01773157",
+        "n01773549",
+        "n01773797",
+        "n01774384",
+        "n01774750",
+        "n01775062",
+    )
+    assert manifest.classes.debug_synsets == ("n07753592",)
