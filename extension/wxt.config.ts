@@ -65,11 +65,19 @@ export default defineConfig({
     },
   },
   manifest: {
+    permissions: ['webRequest', 'webRequestBlocking'],
+    host_permissions: [
+      'https://yt3.ggpht.com/*',
+      'https://preview.redd.it/*',
+      'https://www.reddit.com/*',
+      'https://www.youtube.com/*',
+    ],
     content_security_policy: {
       extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
     },
     browser_specific_settings: {
       gecko: {
+        id: 'spidey-sense@shyndman.ca',
         data_collection_permissions: {
           required: ['none'],
         },
