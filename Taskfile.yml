@@ -9,6 +9,8 @@ tasks:
         msg: watch requires inotifywait
       - sh: command -v file
         msg: watch requires file
+      - sh: command -v identify
+        msg: watch requires identify
       - sh: command -v bun
         msg: watch requires bun
     cmds:

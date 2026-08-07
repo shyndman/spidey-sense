@@ -24,6 +24,10 @@ const EXCLUDED_DIRS = new Set<string>([
 	".output", ".wxt", "dist", "build", "target", // Generated build artifacts.
 	"__pycache__", ".mypy_cache", ".ruff_cache", ".pytest_cache", ".basedpyright", // Python tool caches.
 ]);
+// Intercept-proof fixtures may use harmless 1x1 proxies; larger or misplaced images remain blocked.
+const PROXY_IMAGE_DIRECTORY = "extension/src/network/intercept-proof/images";
+
+type ImageDimensions = { width: number; height: number };
 
 type GuardSnapshot =
 	| { version: typeof PROTOCOL_VERSION; state: "clear"; paths: [] }
@@ -141,15 +145,28 @@ class ImageWatcher {
 	}
 }
 
-async function scanImages(directory: string): Promise<string[]> {
+export async function scanImages(directory: string): Promise<string[]> {
 	const candidates: string[] = [];
 	await collectCandidates(directory, candidates);
 	const images: string[] = [];
 	for (let offset = 0; offset < candidates.length; offset += 200) {
 		const batch = candidates.slice(offset, offset + 200);
 		const mimeTypes = await classifyBatch(batch);
+		const proxyPaths = batch.filter((path, index) =>
+			mimeTypes[index]?.startsWith("image/") && isProxyImagePath(path));
+		const dimensions = await identifyDimensions(proxyPaths);
+		let dimensionIndex = 0;
 		for (let index = 0; index < batch.length; index += 1) {
-			if (mimeTypes[index]?.startsWith("image/")) images.push(displayPath(batch[index]!));
+			if (!mimeTypes[index]?.startsWith("image/")) continue;
+			const path = batch[index]!;
+			if (!isProxyImagePath(path)) {
+				images.push(displayPath(path));
+				continue;
+			}
+			const imageDimensions = dimensions[dimensionIndex++];
+			if (imageDimensions?.width !== 1 || imageDimensions.height !== 1) {
+				images.push(displayPath(path));
+			}
 		}
 	}
 	return images.sort();
@@ -191,8 +208,46 @@ async function classifyBatch(paths: string[]): Promise<string[]> {
 	});
 }
 
+async function identifyDimensions(paths: string[]): Promise<Array<ImageDimensions | undefined>> {
+	if (paths.length === 0) return [];
+	return await new Promise<Array<ImageDimensions | undefined>>((resolve) => {
+		const child = spawn("identify", ["-format", "%w %h\n", "--", ...paths], {
+			stdio: ["ignore", "pipe", "ignore"],
+		});
+		let output = "";
+		child.stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+		child.once("error", () => resolve(paths.map(() => undefined)));
+		child.once("close", (code: number | null) => {
+			if (code !== 0) {
+				resolve(paths.map(() => undefined));
+				return;
+			}
+			const lines = (output.endsWith("\n") ? output.slice(0, -1) : output).split("\n");
+			if (lines.length !== paths.length) {
+				resolve(paths.map(() => undefined));
+				return;
+			}
+			const dimensions = lines.map(parseDimensions);
+			resolve(dimensions.some((value) => value === undefined) ? paths.map(() => undefined) : dimensions);
+		});
+	});
+}
+
+function parseDimensions(line: string): ImageDimensions | undefined {
+	const match = /^(\d+)[ \t]+(\d+)$/.exec(line.trim());
+	if (!match) return undefined;
+	const width = Number(match[1]);
+	const height = Number(match[2]);
+	if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height)) return undefined;
+	return { width, height };
+}
+
+function isProxyImagePath(path: string): boolean {
+	return displayPath(path).startsWith(`${PROXY_IMAGE_DIRECTORY}/`);
+}
+
 function displayPath(path: string): string {
 	return relative(ROOT, path).split(sep).join("/");
 }
 
-new ImageWatcher().run();
+if (import.meta.main) new ImageWatcher().run();
