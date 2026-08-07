@@ -29,6 +29,7 @@ export interface ImagePassThroughWebRequest {
 const IMAGE_HOST_PATTERNS = [
   'https://yt3.ggpht.com/*',
   'https://preview.redd.it/*',
+  'https://i.redd.it/*',
 ] as const;
 const IMAGE_PASS_THROUGH_EXTRA_INFO_SPEC = ['blocking'] as const;
 const IMAGE_RESOURCE_TYPES = ['image'] as const;

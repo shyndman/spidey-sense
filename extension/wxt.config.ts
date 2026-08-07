@@ -67,10 +67,15 @@ export default defineConfig({
   manifest: {
     permissions: ['webRequest', 'webRequestBlocking'],
     host_permissions: [
-      'https://yt3.ggpht.com/*',
+      // Reddit
+      'https://external-preview.redd.it/*',
       'https://preview.redd.it/*',
+      'https://i.redd.it/*',
       'https://www.reddit.com/*',
+
+      // YouTube
       'https://www.youtube.com/*',
+      'https://yt3.ggpht.com/*',
     ],
     content_security_policy: {
       extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",

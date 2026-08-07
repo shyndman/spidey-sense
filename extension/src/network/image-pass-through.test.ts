@@ -73,13 +73,17 @@ afterEach(() => {
 });
 
 describe('registerImagePassThrough', () => {
-  it('registers only image requests for the two approved destination hosts', () => {
+  it('registers only image requests for the three approved destination hosts', () => {
     const { addListener } = installPassThrough();
 
     expect(addListener).toHaveBeenCalledExactlyOnceWith(
       expect.any(Function),
       {
-        urls: ['https://yt3.ggpht.com/*', 'https://preview.redd.it/*'],
+        urls: [
+          'https://yt3.ggpht.com/*',
+          'https://preview.redd.it/*',
+          'https://i.redd.it/*',
+        ],
         types: ['image'],
       },
       ['blocking'],
