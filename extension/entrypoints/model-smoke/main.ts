@@ -63,12 +63,15 @@ async function createProxyPngBytes(): Promise<Uint8Array<ArrayBuffer>> {
 }
 
 function assertProxyPixels(decoded: DecodedImage): void {
+  const channelOrder: string = decoded.channelOrder;
+  const colorSpace: string = decoded.colorSpace;
+  const alphaMode: string = decoded.alphaMode;
   if (
     decoded.width !== PROXY_WIDTH ||
     decoded.height !== PROXY_HEIGHT ||
-    decoded.channelOrder !== "RGBA" ||
-    decoded.colorSpace !== "srgb" ||
-    decoded.alphaMode !== "unpremultiplied" ||
+    channelOrder !== "RGBA" ||
+    colorSpace !== "srgb" ||
+    alphaMode !== "unpremultiplied" ||
     decoded.data.length !== PROXY_RGBA.length
   ) {
     throw new Error("Decoded proxy does not match the typed pixel boundary");
@@ -149,16 +152,23 @@ async function assertBlackTransparency(
   }
 
   for (let channel = 0; channel < channels; channel += 1) {
-    const expected =
-      -metadata.input.mean[channel]! /
-      metadata.input.standardDeviation[channel]!;
+    const mean = metadata.input.mean[channel];
+    const standardDeviation = metadata.input.standardDeviation[channel];
+    if (mean === undefined || standardDeviation === undefined) {
+      throw new Error("Model metadata is missing channel statistics");
+    }
+    const expected = -mean / standardDeviation;
     const planeEnd = (channel + 1) * channelPlaneLength;
     for (
       let inputIndex = channel * channelPlaneLength;
       inputIndex < planeEnd;
       inputIndex += 1
     ) {
-      if (Math.abs(input[inputIndex]! - expected) > FLOAT_COMPARISON_TOLERANCE) {
+      const value = input[inputIndex];
+      if (
+        value === undefined ||
+        Math.abs(value - expected) > FLOAT_COMPARISON_TOLERANCE
+      ) {
         throw new Error("Transparent proxy was not composited against black");
       }
     }
@@ -222,7 +232,7 @@ function publishStatus(status: SmokeStatus): void {
 }
 
 void runFirefoxExtensionSmoke().then(
-  () => publishStatus(SmokeStatus.PASSED),
+  () => { publishStatus(SmokeStatus.PASSED); },
   () => {
     console.error("Firefox extension smoke test failed");
     publishStatus(SmokeStatus.FAILED);

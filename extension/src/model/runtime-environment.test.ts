@@ -2,7 +2,6 @@ import { env } from 'onnxruntime-web/wasm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  RuntimeInitializationError,
   configureOnnxRuntime,
   initializeOnnxRuntime,
 } from './runtime-environment';
@@ -17,20 +16,17 @@ describe('configureOnnxRuntime', () => {
 
     expect(env.wasm.numThreads).toBe(1);
     expect(env.wasm.proxy).toBe(false);
-    expect(env.wasm.wasmPaths).toEqual({
-      wasm: expect.any(URL),
-      mjs: expect.any(URL),
-    });
 
     const paths = env.wasm.wasmPaths;
     if (
       typeof paths !== 'object' ||
-      paths === null ||
       paths.wasm === undefined ||
       paths.mjs === undefined
     ) {
       throw new Error('Expected explicit packaged ONNX Runtime URLs');
     }
+    expect(paths.wasm).toBeInstanceOf(URL);
+    expect(paths.mjs).toBeInstanceOf(URL);
     expect(paths.wasm.toString()).not.toMatch(/^https?:/);
     expect(paths.mjs.toString()).not.toMatch(/^https?:/);
   });
@@ -41,9 +37,9 @@ describe('initializeOnnxRuntime', () => {
     env.wasm.wasmPaths = undefined;
 
     await expect(
-      initializeOnnxRuntime(async () => {
+      initializeOnnxRuntime(() => {
         expect(env.wasm.wasmPaths).toBeDefined();
-        return 'initialized' as const;
+        return Promise.resolve('initialized' as const);
       }),
     ).resolves.toBe('initialized');
   });
@@ -52,9 +48,7 @@ describe('initializeOnnxRuntime', () => {
     const cause = new Error('private asset location');
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    const result = initializeOnnxRuntime(async () => {
-      throw cause;
-    });
+    const result = initializeOnnxRuntime(() => Promise.reject(cause));
 
     await expect(result).rejects.toMatchObject({
       name: 'RuntimeInitializationError',

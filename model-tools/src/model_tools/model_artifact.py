@@ -7,7 +7,7 @@ import urllib.request
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import BinaryIO, Final
+from typing import BinaryIO, Final, cast
 
 from .metadata import OnnxModelSource, SourceManifest, TimmSafetensorsModelSource
 from .model_export import export_timm_safetensors
@@ -71,7 +71,10 @@ def sha256(path: Path) -> str:
 def open_url(url: str) -> Generator[BinaryIO]:
     """Open a pinned source with a bounded connection timeout."""
 
-    with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
+    with cast(
+        BinaryIO,
+        urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_SECONDS),
+    ) as response:
         yield response
 
 
@@ -82,14 +85,14 @@ def _download(url: str, destination: Path, *, size: int, digest: str) -> None:
     try:
         with open_url(url) as response, partial.open("wb") as target:
             while chunk := response.read(DOWNLOAD_CHUNK_BYTES):
-                target.write(chunk)
+                _ = target.write(chunk)
                 actual_digest.update(chunk)
                 actual_size += len(chunk)
         if actual_size != size:
             raise RuntimeError("downloaded model source failed size verification")
         if actual_digest.hexdigest() != digest:
             raise RuntimeError("downloaded model source failed SHA-256 verification")
-        partial.replace(destination)
+        _ = partial.replace(destination)
     finally:
         partial.unlink(missing_ok=True)
 
@@ -116,7 +119,7 @@ def acquire_model_artifact(
                 digest=source.sha256,
             )
             validate(staged)
-            staged.replace(destination)
+            _ = staged.replace(destination)
         finally:
             staged.unlink(missing_ok=True)
         return
@@ -143,7 +146,7 @@ def acquire_model_artifact(
             expected_sha256=source.artifact_sha256,
         )
         validate(partial)
-        partial.replace(destination)
+        _ = partial.replace(destination)
     finally:
         partial.unlink(missing_ok=True)
 

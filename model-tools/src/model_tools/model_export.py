@@ -41,8 +41,8 @@ def _load_model(
     installed_version = version("timm")
     if installed_version != source.exporter_version:
         raise RuntimeError(
-            f"timm exporter version {installed_version} does not match "
-            f"pinned version {source.exporter_version}"
+            f"timm exporter version {installed_version} does not match pinned "
+            + f"version {source.exporter_version}"
         )
 
     # HACK: Import timm only when conversion is requested. Its eager torchvision
@@ -57,7 +57,7 @@ def _load_model(
     model = create_model(source.architecture, pretrained=False)
     safe_tensors = cast(
         _SafeTensorsTorch,
-        importlib.import_module("safetensors.torch"),
+        cast(object, importlib.import_module("safetensors.torch")),
     )
     state = safe_tensors.load_file(str(weights_path), device="cpu")
     _ = model.load_state_dict(state, strict=True)

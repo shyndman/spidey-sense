@@ -55,8 +55,10 @@ function metadataFixture(): ModelMetadata {
 function runtimeSession(
   overrides: Partial<ModelRuntimeSession> = {},
 ): ModelRuntimeSession {
-  const run = vi.fn(async (): Promise<InferenceSession.ReturnType> => ({}));
-  const release = vi.fn(async (): Promise<void> => undefined);
+  const run = vi.fn(
+    (): Promise<InferenceSession.ReturnType> => Promise.resolve({}),
+  );
+  const release = vi.fn((): Promise<void> => Promise.resolve());
 
   return {
     inputNames: ["input"],
@@ -91,8 +93,8 @@ describe("ModelSessionManager", () => {
   it("loads one validated model session for concurrent and repeated callers", async () => {
     const metadata = metadataFixture();
     const session = runtimeSession();
-    const loadMetadata = vi.fn(async () => metadata);
-    const createSession = vi.fn(async () => session);
+    const loadMetadata = vi.fn(() => Promise.resolve(metadata));
+    const createSession = vi.fn(() => Promise.resolve(session));
     const manager = new ModelSessionManager(
       new URL("moz-extension://extension/models/model.metadata.json"),
       { loadMetadata, createSession },
@@ -156,11 +158,12 @@ describe("ModelSessionManager", () => {
       const manager = new ModelSessionManager(
         new URL("moz-extension://extension/models/model.metadata.json"),
         {
-          loadMetadata: async () => metadataFixture(),
-          createSession: async () => session,
+          loadMetadata: () => Promise.resolve(metadataFixture()),
+          createSession: () => Promise.resolve(session),
         },
       );
-      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const release = vi.spyOn(session, "release");
+      const run = vi.spyOn(session, "run");
 
       const initialization = manager.initialize();
 
@@ -169,21 +172,21 @@ describe("ModelSessionManager", () => {
         code: "GRAPH_MISMATCH",
         boundary,
       } satisfies Partial<ModelGraphContractError>);
-      expect(session.release).toHaveBeenCalledExactlyOnceWith();
-      expect(session.run).not.toHaveBeenCalled();
+      expect(release).toHaveBeenCalledExactlyOnceWith();
+      expect(run).not.toHaveBeenCalled();
       expect(manager.state).toBe("failed");
     },
   );
 
   it("retains one failed attempt and traces no failure details", async () => {
     const cause = new Error("private model location and runtime details");
-    const createSession = vi.fn(async (): Promise<ModelRuntimeSession> => {
-      throw cause;
-    });
+    const createSession = vi.fn(
+      (): Promise<ModelRuntimeSession> => Promise.reject(cause),
+    );
     const manager = new ModelSessionManager(
       new URL("moz-extension://private/models/model.metadata.json"),
       {
-        loadMetadata: async () => metadataFixture(),
+        loadMetadata: () => Promise.resolve(metadataFixture()),
         createSession,
       },
     );

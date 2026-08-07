@@ -66,7 +66,7 @@ def _fetch_page(
     previous_fingerprint: tuple[str, ...] | None,
 ) -> tuple[list[dict[str, object]], tuple[str, ...] | None, bool]:
     try:
-        payload = materialization.fetch_json(_inat_url(category, page))
+        payload = materialization.fetch_json(inat_url(category, page))
     except Exception as error:
         raise AcquisitionFailure("INAT_QUERY_FAILED") from error
     raw_rows_value = payload.get("results", [])
@@ -101,7 +101,7 @@ def _page_candidates(
 ) -> list[Candidate]:
     candidates: list[Candidate] = []
     for observation in sorted(rows, key=_observation_key):
-        chosen = _choose_observation_photo(observation)
+        chosen = choose_observation_photo(observation)
         if chosen is None:
             continue
         source_id, image_url, license_name = chosen
@@ -152,7 +152,7 @@ def iter_candidates(
         page += 1
 
 
-def _inat_url(category: str, page: int) -> str:
+def inat_url(category: str, page: int) -> str:
     taxon_id = INATURALIST_TAXON_IDS.get(category)
     if taxon_id is None:
         raise AcquisitionFailure("INAT_QUERY_FAILED")
@@ -185,7 +185,7 @@ def _observation_key(row: Mapping[str, object]) -> tuple[int, str]:
     return numeric, str(raw_id)
 
 
-def _choose_observation_photo(
+def choose_observation_photo(
     observation: Mapping[str, object],
 ) -> tuple[str, str, str] | None:
     if str(observation.get("quality_grade", "")) != "research":
@@ -225,5 +225,6 @@ __all__ = [
     "INATURALIST_TAXON_IDS",
     "POSITIVE_QUOTA",
     "PUBLIC_PHOTO_LICENSES",
-    "iter_candidates",
+    "choose_observation_photo",
+    "inat_url",
 ]

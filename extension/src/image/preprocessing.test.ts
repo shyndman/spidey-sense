@@ -90,7 +90,11 @@ function expectFloatArrayClose(
 ): void {
   expect(actual.length).toBe(expected.length);
   for (let index = 0; index < expected.length; index += 1) {
-    expect(actual[index]).toBeCloseTo(expected[index]!, 6);
+    const expectedValue = expected.at(index);
+    if (expectedValue === undefined) {
+      throw new Error(`Missing expected value at index ${String(index)}`);
+    }
+    expect(actual[index]).toBeCloseTo(expectedValue, 6);
   }
 }
 
@@ -101,12 +105,13 @@ afterEach(() => {
 describe("transformImageToModelInput", () => {
   it("contains the full image, pads black, normalizes, and writes NCHW", async () => {
     const debugLog = vi.spyOn(console, "debug").mockImplementation(() => undefined);
+    const durationMatcher: unknown = expect.any(Number);
     const image = decodedImage(2, 1, emptyRgba(2, 1));
     const resizedData = emptyRgba(2, 1);
     writePixel(resizedData, 2, 0, 0, [255, 0, 0, OPAQUE_ALPHA]);
     writePixel(resizedData, 2, 1, 0, [0, 255, 0, 128]);
-    const resize = vi.fn<ImagePreprocessingDependencies["resize"]>(
-      async () => ({ width: 2, height: 1, data: resizedData }),
+    const resize = vi.fn<ImagePreprocessingDependencies["resize"]>(() =>
+      Promise.resolve({ width: 2, height: 1, data: resizedData }),
     );
     const metadata = metadataFixture();
 
@@ -131,7 +136,7 @@ describe("transformImageToModelInput", () => {
     expect(debugLog).toHaveBeenCalledExactlyOnceWith(
       "Decoded image transformed into the model input boundary",
       {
-        durationMilliseconds: expect.any(Number),
+        durationMilliseconds: durationMatcher,
         sourceWidth: 2,
         sourceHeight: 1,
         resizedWidth: 2,
@@ -146,8 +151,8 @@ describe("transformImageToModelInput", () => {
   it("preserves aspect ratio within the complete model boundary", async () => {
     vi.spyOn(console, "debug").mockImplementation(() => undefined);
     const image = decodedImage(4, 3, emptyRgba(4, 3));
-    const resize = vi.fn<ImagePreprocessingDependencies["resize"]>(
-      async () => ({ width: 3, height: 2, data: emptyRgba(3, 2) }),
+    const resize = vi.fn<ImagePreprocessingDependencies["resize"]>(() =>
+      Promise.resolve({ width: 3, height: 2, data: emptyRgba(3, 2) }),
     );
     const metadata = metadataFixture({ shape: [null, 3, 2, 3] });
 
@@ -164,8 +169,8 @@ describe("transformImageToModelInput", () => {
       writePixel(resizedData, 2, 0, y, [1, 0, 0, OPAQUE_ALPHA]);
       writePixel(resizedData, 2, 1, y, [2, 0, 0, OPAQUE_ALPHA]);
     }
-    const resize = vi.fn<ImagePreprocessingDependencies["resize"]>(
-      async () => ({ width: 2, height: 3, data: resizedData }),
+    const resize = vi.fn<ImagePreprocessingDependencies["resize"]>(() =>
+      Promise.resolve({ width: 2, height: 3, data: resizedData }),
     );
     const metadata = metadataFixture({
       shape: [null, 3, 3, 3],
@@ -199,8 +204,8 @@ describe("transformImageToModelInput", () => {
 
   it("rejects an invalid resizer result", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const resize = vi.fn<ImagePreprocessingDependencies["resize"]>(
-      async () => ({ width: 2, height: 1, data: new Uint8ClampedArray() }),
+    const resize = vi.fn<ImagePreprocessingDependencies["resize"]>(() =>
+      Promise.resolve({ width: 2, height: 1, data: new Uint8ClampedArray() }),
     );
 
     await expect(
@@ -219,8 +224,8 @@ describe("transformImageToModelInput", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const resizedData = emptyRgba(2, 1);
     resizedData.fill(OPAQUE_ALPHA);
-    const resize = vi.fn<ImagePreprocessingDependencies["resize"]>(
-      async () => ({ width: 2, height: 1, data: resizedData }),
+    const resize = vi.fn<ImagePreprocessingDependencies["resize"]>(() =>
+      Promise.resolve({ width: 2, height: 1, data: resizedData }),
     );
     const metadata = metadataFixture({
       pixelScale: Number.MAX_VALUE,
@@ -242,9 +247,10 @@ describe("transformImageToModelInput", () => {
 
   it("wraps resizer failures without logging their contents", async () => {
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const resize = vi.fn<ImagePreprocessingDependencies["resize"]>(async () => {
-      throw new Error("sensitive-pixel-sentinel");
-    });
+    const durationMatcher: unknown = expect.any(Number);
+    const resize = vi.fn<ImagePreprocessingDependencies["resize"]>(() =>
+      Promise.reject(new Error("sensitive-pixel-sentinel")),
+    );
 
     await expect(
       transformImageToModelInput(
@@ -259,7 +265,7 @@ describe("transformImageToModelInput", () => {
     expect(errorLog).toHaveBeenCalledExactlyOnceWith(
       "Image preprocessing stopped: TRANSFORMATION_FAILED",
       {
-        durationMilliseconds: expect.any(Number),
+        durationMilliseconds: durationMatcher,
         sourceWidth: 2,
         sourceHeight: 1,
       },

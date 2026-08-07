@@ -8,10 +8,9 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
-
 from model_tools import model_artifact
 from model_tools.acquire import load_source_manifest
-from model_tools.metadata import TimmSafetensorsModelSource
+from model_tools.metadata import SourceManifest, TimmSafetensorsModelSource
 
 
 def _digest(payload: bytes) -> str:
@@ -20,7 +19,7 @@ def _digest(payload: bytes) -> str:
 
 def test_converted_artifact_verifies_before_promotion_and_cleans_staging(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source_payload = b"harmless synthetic weights"
     final_payload = b"harmless synthetic ONNX"
@@ -51,14 +50,18 @@ def test_converted_artifact_verifies_before_promotion_and_cleans_staging(
 
     exported_payload = b"wrong artifact"
 
-    def fake_export(weights: Path, destination: Path, _manifest) -> None:
+    def fake_export(
+        weights: Path,
+        destination: Path,
+        _manifest: SourceManifest,
+    ) -> None:
         assert weights.read_bytes() == source_payload
-        destination.write_bytes(exported_payload)
+        _ = destination.write_bytes(exported_payload)
 
     monkeypatch.setattr(model_artifact, "open_url", fake_open_url)
     monkeypatch.setattr(model_artifact, "export_timm_safetensors", fake_export)
     destination = tmp_path / "model.onnx"
-    destination.write_bytes(b"existing artifact")
+    _ = destination.write_bytes(b"existing artifact")
     validation_calls = 0
 
     def validate(path: Path) -> None:

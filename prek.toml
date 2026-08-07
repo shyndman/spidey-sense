@@ -1,0 +1,47 @@
+minimum_prek_version = "0.4.12"
+default_stages = ["pre-commit"]
+default_install_hook_types = ["pre-commit", "commit-msg"]
+
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "ruff"
+name = "Ruff"
+language = "system"
+entry = "uv run --project model-tools --frozen ruff check --config model-tools/pyproject.toml model-tools/src model-tools/tests"
+files = "^model-tools/((src|tests)/.*\\.py|pyproject\\.toml|uv\\.lock)$"
+pass_filenames = false
+
+[[repos.hooks]]
+id = "basedpyright"
+name = "basedpyright"
+language = "system"
+entry = "uv run --project model-tools --frozen basedpyright --project model-tools/pyproject.toml"
+files = "^model-tools/((src|tests)/.*\\.py|pyproject\\.toml|uv\\.lock)$"
+pass_filenames = false
+
+[[repos.hooks]]
+id = "eslint"
+name = "ESLint"
+language = "system"
+entry = "pnpm --dir extension run lint"
+files = "^extension/(.*\\.[cm]?[jt]sx?|package\\.json|pnpm-lock\\.yaml|tsconfig\\.json)$"
+pass_filenames = false
+
+[[repos.hooks]]
+id = "typescript"
+name = "TypeScript"
+language = "system"
+entry = "pnpm --dir extension run compile"
+files = "^extension/(.*\\.[cm]?[jt]sx?|package\\.json|pnpm-lock\\.yaml|tsconfig\\.json)$"
+pass_filenames = false
+
+[[repos]]
+repo = "https://github.com/compilerla/conventional-pre-commit"
+rev = "v4.4.0"
+
+[[repos.hooks]]
+id = "conventional-pre-commit"
+name = "Conventional Commit"
+stages = ["commit-msg"]

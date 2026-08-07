@@ -38,7 +38,7 @@ class _OnnxRuntime(Protocol):
     ) -> _InferenceSession: ...
 
 
-ort = cast(_OnnxRuntime, importlib.import_module("onnxruntime"))
+ort = cast(_OnnxRuntime, cast(object, importlib.import_module("onnxruntime")))
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,15 +54,16 @@ def softmax_logits(logits: NDArray[np.float32]) -> tuple[float, ...]:
 
     if logits.shape != (PROBABILITY_COUNT,) or not bool(np.all(np.isfinite(logits))):
         raise ValueError("invalid logits")
-    shifted = logits.astype(np.float64) - float(np.max(logits))
-    exponentials = np.exp(shifted)
-    total = float(np.sum(exponentials))
+    shifted: NDArray[np.float64] = logits.astype(np.float64) - float(np.max(logits))
+    exponentials: NDArray[np.float64] = np.exp(shifted)
+    total_value: np.float64 = np.sum(exponentials, dtype=np.float64)
+    total = float(total_value)
     if not math.isfinite(total) or total <= 0:
         raise ValueError("invalid softmax sum")
-    probabilities = exponentials / total
+    probabilities: NDArray[np.float64] = exponentials / total
     if not bool(np.all(np.isfinite(probabilities))):
         raise ValueError("invalid softmax probabilities")
-    return tuple(float(value) for value in probabilities)
+    return tuple(float(value) for value in probabilities.flat)
 
 
 def preprocess_image(path: Path, metadata: InputMetadata) -> NDArray[np.float32]:
@@ -79,7 +80,7 @@ def preprocess_image(path: Path, metadata: InputMetadata) -> NDArray[np.float32]
     if channels != 3:
         raise ValueError("evaluation input must have three channels")
     with Image.open(path) as source:
-        source.load()
+        _ = source.load()
         image = source.convert("RGB")
     if image.width <= 0 or image.height <= 0:
         raise ValueError("invalid image dimensions")
@@ -139,7 +140,8 @@ def _score_sample(
     logits = cast(NDArray[np.float32], outputs[0])
     if logits.shape != (1, PROBABILITY_COUNT):
         raise ValueError("invalid inference output shape")
-    probabilities = softmax_logits(logits[0])
+    row: NDArray[np.float32] = logits[0, :]
+    probabilities = softmax_logits(row)
     blocked_indices = tuple(record.index for record in model.metadata.classes.blocked)
     blocked_score = sum(probabilities[index] for index in blocked_indices)
     return ScoreRecord(
@@ -147,7 +149,7 @@ def _score_sample(
         sample_id=manifest.sample_id,
         probabilities=probabilities,
         blocked_score=blocked_score,
-        top_index=int(np.argmax(logits[0])),
+        top_index=int(np.argmax(row)),
     )
 
 

@@ -75,7 +75,7 @@ class _OnnxRuntime(Protocol):
     ) -> _InferenceSession: ...
 
 
-ort = cast(_OnnxRuntime, importlib.import_module("onnxruntime"))
+ort = cast(_OnnxRuntime, cast(object, importlib.import_module("onnxruntime")))
 
 DOWNLOAD_CHUNK_BYTES: Final = 1_048_576
 DOWNLOAD_TIMEOUT_SECONDS: Final = 30
@@ -119,7 +119,7 @@ def acquire_bundle(manifest_path: Path, output_dir: Path) -> BundlePaths:
         expected_sha256=artifact_sha256(manifest),
     ):
         try:
-            verify_bundle(manifest_path, output_dir, run_inference=True)
+            _ = verify_bundle(manifest_path, output_dir, run_inference=True)
         except AcquisitionError:
             pass
         else:
@@ -135,9 +135,9 @@ def acquire_bundle(manifest_path: Path, output_dir: Path) -> BundlePaths:
             raise AcquisitionError(f"model acquisition failed: {error}") from error
     _validate_artifact(paths.model, manifest)
     labels = _download_labels(manifest)
-    metadata = _build_metadata(manifest, labels)
+    metadata = build_metadata(manifest, labels)
     _write_metadata(metadata, paths.metadata)
-    verify_bundle(manifest_path, output_dir, run_inference=True)
+    _ = verify_bundle(manifest_path, output_dir, run_inference=True)
     return paths
 
 
@@ -158,7 +158,7 @@ def verify_bundle(
     )
     _verify_graph(paths.model, manifest)
     metadata = _load_metadata(paths.metadata)
-    expected = _build_metadata(manifest, metadata.output.labels)
+    expected = build_metadata(manifest, metadata.output.labels)
     if metadata != expected:
         raise AcquisitionError("metadata does not match the pinned source contract")
     if paths.metadata.read_bytes() != _serialize_metadata(metadata):
@@ -201,9 +201,12 @@ def _sha256(path: Path) -> str:
 @contextmanager
 def _open_url(url: str) -> Generator[BinaryIO]:
     try:
-        with urllib.request.urlopen(
-            url,
-            timeout=DOWNLOAD_TIMEOUT_SECONDS,
+        with cast(
+            BinaryIO,
+            urllib.request.urlopen(
+                url,
+                timeout=DOWNLOAD_TIMEOUT_SECONDS,
+            ),
         ) as response:
             yield response
     except OSError as error:
@@ -228,10 +231,10 @@ def _download_labels(manifest: SourceManifest) -> tuple[LabelRecord, ...]:
         text = payload.decode("utf-8")
     except UnicodeDecodeError as error:
         raise AcquisitionError("downloaded labels are not UTF-8") from error
-    return _parse_labels(text, expected_count=manifest.labels.count)
+    return parse_labels(text, expected_count=manifest.labels.count)
 
 
-def _parse_labels(text: str, *, expected_count: int) -> tuple[LabelRecord, ...]:
+def parse_labels(text: str, *, expected_count: int) -> tuple[LabelRecord, ...]:
     lines = text.splitlines()
     if len(lines) != expected_count or any(not line for line in lines):
         raise AcquisitionError(f"expected exactly {expected_count} non-empty labels")
@@ -302,9 +305,11 @@ def _verify_tensor(
         or tensor_type.elem_type != TensorProto.FLOAT
         or actual_dimensions != dimensions
     ):
-        raise AcquisitionError(
-            f"unexpected tensor contract for {value.name}: "
+        tensor_description = (
             f"type={tensor_type.elem_type}, shape={actual_dimensions}"
+        )
+        raise AcquisitionError(
+            f"unexpected tensor contract for {value.name}: {tensor_description}"
         )
 
 
@@ -352,7 +357,7 @@ def _run_inference(path: Path, manifest: SourceManifest) -> None:
         raise AcquisitionError("inference softmax probabilities do not sum to one")
 
 
-def _build_metadata(
+def build_metadata(
     manifest: SourceManifest,
     labels: tuple[LabelRecord, ...],
 ) -> ArtifactMetadata:
@@ -436,8 +441,8 @@ def _serialize_metadata(metadata: ArtifactMetadata) -> bytes:
 def _write_metadata(metadata: ArtifactMetadata, destination: Path) -> None:
     partial = destination.with_name(f".{destination.name}{PART_SUFFIX}")
     try:
-        partial.write_bytes(_serialize_metadata(metadata))
-        partial.replace(destination)
+        _ = partial.write_bytes(_serialize_metadata(metadata))
+        _ = partial.replace(destination)
     finally:
         partial.unlink(missing_ok=True)
 

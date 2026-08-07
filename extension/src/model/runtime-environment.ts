@@ -2,7 +2,9 @@ import { env } from 'onnxruntime-web/wasm';
 
 const SINGLE_RUNTIME_THREAD = 1;
 
-const runtimeBaseUrl = globalThis.location?.href ?? import.meta.url;
+const runtimeBaseUrl = Object.hasOwn(globalThis, "location")
+  ? globalThis.location.href
+  : import.meta.url;
 
 /** A sanitized failure raised when the local ONNX Runtime cannot initialize. */
 export class RuntimeInitializationError extends Error {

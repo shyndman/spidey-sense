@@ -8,21 +8,20 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Final
+from typing import Final, cast, override
 
-import onnx
 import pytest
-from onnx import TensorProto, helper
-
 from model_tools.acquire import (
     AcquisitionError,
-    _build_metadata,
-    _parse_labels,
     acquire_bundle,
+    build_metadata,
+    check_model,
     load_source_manifest,
+    parse_labels,
     verify_bundle,
 )
 from model_tools.metadata import TimmSafetensorsModelSource
+from onnx import TensorProto, helper
 
 _BLOCKED_SYNSET: Final = "n00000001"
 _DEBUG_SYNSET: Final = "n00000002"
@@ -30,22 +29,22 @@ _CLASS_COUNT: Final = 12
 
 
 class _PayloadServer(ThreadingHTTPServer):
-    payloads: dict[str, bytes]
+    payloads: dict[str, bytes] = {}
 
 
 class _PayloadHandler(BaseHTTPRequestHandler):
-    server: _PayloadServer
-
     def do_GET(self) -> None:
-        payload = self.server.payloads.get(self.path)
+        server = cast(_PayloadServer, self.server)
+        payload = server.payloads.get(self.path)
         if payload is None:
             self.send_error(404)
             return
         self.send_response(200)
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
-        self.wfile.write(payload)
+        _ = self.wfile.write(payload)
 
+    @override
     def log_message(self, format: str, *args: object) -> None:
         del format, args
 
@@ -57,7 +56,7 @@ def _serve(payloads: dict[str, bytes]) -> Generator[str]:
     thread = threading.Thread(target=server.serve_forever)
     thread.start()
     try:
-        host, port = server.server_address
+        host, port = cast(tuple[str, int], server.server_address)
         yield f"http://{host}:{port}"
     finally:
         server.shutdown()
@@ -87,7 +86,7 @@ def _model_bytes() -> bytes:
         opset_imports=[helper.make_opsetid("", 12)],
     )
     model.ir_version = 8
-    onnx.checker.check_model(model, full_check=True)
+    check_model(model, full_check=True)
     return model.SerializeToString()
 
 
@@ -113,7 +112,7 @@ def _write_manifest(
     blocked_synset: str = _BLOCKED_SYNSET,
     input_height: int = 2,
 ) -> None:
-    path.write_text(
+    _ = path.write_text(
         f'''schema_version = 3
 
 [model]
@@ -262,10 +261,10 @@ def test_checked_in_mobilenetv4_manifest_pins_conversion_contract() -> None:
 
 def test_invalid_source_manifest_is_rejected(tmp_path: Path) -> None:
     manifest_path = tmp_path / "invalid.toml"
-    manifest_path.write_text("schema_version = 3\n", encoding="utf-8")
+    _ = manifest_path.write_text("schema_version = 3\n", encoding="utf-8")
 
     with pytest.raises(AcquisitionError, match="invalid source manifest"):
-        load_source_manifest(manifest_path)
+        _ = load_source_manifest(manifest_path)
 
 
 def test_acquire_downloads_then_reuses_bundle_offline(tmp_path: Path) -> None:
@@ -315,7 +314,7 @@ def test_checksum_failure_removes_partial_model(tmp_path: Path) -> None:
             model_sha256="0" * 64,
         )
         with pytest.raises(AcquisitionError, match="SHA-256"):
-            acquire_bundle(manifest_path, bundle_dir)
+            _ = acquire_bundle(manifest_path, bundle_dir)
 
     assert not (bundle_dir / "synthetic-model.onnx").exists()
     assert list(bundle_dir.glob("*.part")) == []
@@ -337,7 +336,7 @@ def test_size_failure_removes_partial_model(tmp_path: Path) -> None:
             model_size_bytes=len(model_payload) + 1,
         )
         with pytest.raises(AcquisitionError, match="size"):
-            acquire_bundle(manifest_path, bundle_dir)
+            _ = acquire_bundle(manifest_path, bundle_dir)
 
     assert not (bundle_dir / "synthetic-model.onnx").exists()
     assert list(bundle_dir.glob("*.part")) == []
@@ -359,7 +358,7 @@ def test_graph_contract_failure_does_not_promote_model(tmp_path: Path) -> None:
             input_height=3,
         )
         with pytest.raises(AcquisitionError, match="unexpected tensor contract"):
-            acquire_bundle(manifest_path, bundle_dir)
+            _ = acquire_bundle(manifest_path, bundle_dir)
 
     assert not (bundle_dir / "synthetic-model.onnx").exists()
     assert list(bundle_dir.glob("*.part")) == []
@@ -367,7 +366,7 @@ def test_graph_contract_failure_does_not_promote_model(tmp_path: Path) -> None:
 
 def test_label_parser_rejects_duplicate_synsets() -> None:
     with pytest.raises(AcquisitionError, match="duplicate label"):
-        _parse_labels(
+        _ = parse_labels(
             "n00000001 first\nn00000001 second\n",
             expected_count=2,
         )
@@ -386,13 +385,13 @@ def test_metadata_rejects_missing_group_synset(tmp_path: Path) -> None:
         blocked_synset="n99999999",
     )
     manifest = load_source_manifest(manifest_path)
-    labels = _parse_labels(
+    labels = parse_labels(
         labels_payload.decode(),
         expected_count=_CLASS_COUNT,
     )
 
     with pytest.raises(AcquisitionError, match="missing blocked synset"):
-        _build_metadata(manifest, labels)
+        _ = build_metadata(manifest, labels)
 
 
 

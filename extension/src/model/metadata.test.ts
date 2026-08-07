@@ -154,11 +154,13 @@ describe("resolveModelUrl", () => {
 
 describe("loadModelMetadata", () => {
   it("fetches and validates JSON through an injected implementation", async () => {
-    const fetcher: typeof fetch = async () =>
-      new Response(JSON.stringify(metadataFixture()), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
+    const fetcher: typeof fetch = () =>
+      Promise.resolve(
+        new Response(JSON.stringify(metadataFixture()), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
 
     await expect(
       loadModelMetadata(new URL("https://metadata.invalid/metadata.json"), fetcher),
@@ -166,7 +168,8 @@ describe("loadModelMetadata", () => {
   });
 
   it("rejects non-OK responses", async () => {
-    const fetcher: typeof fetch = async () => new Response(null, { status: 503 });
+    const fetcher: typeof fetch = () =>
+      Promise.resolve(new Response(null, { status: 503 }));
 
     await expect(
       loadModelMetadata(new URL("https://metadata.invalid/metadata.json"), fetcher),
@@ -175,9 +178,7 @@ describe("loadModelMetadata", () => {
 
   it("preserves a fetch failure as the public error cause", async () => {
     const networkError = new Error("synthetic network failure");
-    const fetcher: typeof fetch = async () => {
-      throw networkError;
-    };
+    const fetcher: typeof fetch = () => Promise.reject(networkError);
 
     await expect(
       loadModelMetadata(new URL("https://metadata.invalid/metadata.json"), fetcher),
@@ -188,7 +189,7 @@ describe("loadModelMetadata", () => {
   });
 
   it("rejects malformed response JSON through the public API", async () => {
-    const fetcher: typeof fetch = async () => new Response("not json");
+    const fetcher: typeof fetch = () => Promise.resolve(new Response("not json"));
 
     await expect(
       loadModelMetadata(new URL("https://metadata.invalid/metadata.json"), fetcher),

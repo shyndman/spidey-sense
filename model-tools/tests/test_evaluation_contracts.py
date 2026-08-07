@@ -3,8 +3,6 @@
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
-
 from model_tools.evaluation import (
     AnnotationRecord,
     Detection,
@@ -16,6 +14,7 @@ from model_tools.evaluation import (
     atomic_write_json,
     read_json,
 )
+from pydantic import ValidationError
 
 
 def _manifest() -> SampleManifest:
@@ -39,9 +38,9 @@ def _manifest() -> SampleManifest:
 
 def test_contracts_reject_unknown_and_weak_values() -> None:
     with pytest.raises(ValidationError):
-        SampleManifest.model_validate({**_manifest().model_dump(), "unexpected": 1})
+        _ = SampleManifest.model_validate({**_manifest().model_dump(), "unexpected": 1})
     with pytest.raises(ValidationError):
-        SampleManifest.model_validate({**_manifest().model_dump(), "width": True})
+        _ = SampleManifest.model_validate({**_manifest().model_dump(), "width": True})
 
 
 def test_detection_and_annotation_bounds() -> None:
@@ -58,14 +57,14 @@ def test_detection_and_annotation_bounds() -> None:
     )
     assert record.detections[0].rank == 1
     with pytest.raises(ValidationError):
-        Detection(
+        _ = Detection(
             rank=21,
             phrase="target",
             confidence=0.5,
             box_xyxy=(0.0, 1.0, 10.0, 12.0),
         )
     with pytest.raises(ValidationError):
-        AnnotationRecord(
+        _ = AnnotationRecord(
             sample_id="sample-1",
             detections=tuple(
                 Detection(
@@ -90,7 +89,7 @@ def test_score_and_stage_lengths() -> None:
     )
     assert len(score.probabilities) == 1000
     with pytest.raises(ValidationError):
-        ScoreRecord(
+        _ = ScoreRecord(
             model_id="evaluation-model",
             sample_id="sample-1",
             probabilities=(0.001,) * 999,
@@ -100,7 +99,7 @@ def test_score_and_stage_lengths() -> None:
     assert StageFailure(stage="score", code="missing_output", sample_id="opaque")
     assert StageSummary(attempted=3, completed=1, skipped=1, failed=1)
     with pytest.raises(ValidationError):
-        StageSummary(attempted=3, completed=1, skipped=1, failed=0)
+        _ = StageSummary(attempted=3, completed=1, skipped=1, failed=0)
 
 
 def test_paths_create_layout_and_atomic_json(tmp_path: Path) -> None:
@@ -151,4 +150,4 @@ def test_root_relative_image_path_matches_scoring_resolution(tmp_path: Path) -> 
         "images/",
     ):
         with pytest.raises(ValueError):
-            paths.image_path(invalid_path)
+            _ = paths.image_path(invalid_path)

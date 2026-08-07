@@ -213,8 +213,8 @@ export async function loadModelMetadata(
   }
 
   if (!response.ok) {
-    console.error(`Model metadata fetch failed with HTTP ${response.status}`);
-    throw new Error(`Failed to fetch model metadata: HTTP ${response.status}`);
+    console.error(`Model metadata fetch failed with HTTP ${String(response.status)}`);
+    throw new Error(`Failed to fetch model metadata: HTTP ${String(response.status)}`);
   }
 
   let value: unknown;

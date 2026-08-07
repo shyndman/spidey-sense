@@ -93,9 +93,12 @@ describe("runModelInference", () => {
   });
 
   it("normalizes stable probabilities and returns one prediction plus class sums", async () => {
-    const session = fakeSession(async () => ({
-      metadata_output: outputTensor(new Float32Array([1_000, 1_002, 1_001])),
-    }));
+    const session = fakeSession(() =>
+      Promise.resolve({
+        metadata_output: outputTensor(new Float32Array([1_000, 1_002, 1_001])),
+      }),
+    );
+    const debugLog = vi.spyOn(console, "debug");
 
     const result = await runModelInference(
       session,
@@ -111,35 +114,38 @@ describe("runModelInference", () => {
     expect(
       result.probabilities.reduce((sum, probability) => sum + probability, 0),
     ).toBeCloseTo(1);
-    expect(result.topPrediction).toEqual({
+    const { probability, ...topPrediction } = result.topPrediction;
+    expect(topPrediction).toEqual({
       index: 1,
       synset: "n00000002",
       label: "second",
-      probability: expect.closeTo(0.66524096, 6),
     });
+    expect(probability).toBeCloseTo(0.66524096, 6);
     expect(result.blockedScore).toBeCloseTo(0.66524096);
     expect(result.debugScore).toBeCloseTo(0.33475904);
-    expect(console.debug).toHaveBeenCalledExactlyOnceWith(
+    expect(debugLog).toHaveBeenCalledExactlyOnceWith(
       "Model inference completed",
-      {
-        durationMilliseconds: expect.any(Number),
+      expect.objectContaining({
         inputElements: 12,
         outputElements: 3,
-      },
+      }),
+    );
+    expect(debugLog.mock.calls[0]?.[1]).toHaveProperty(
+      "durationMilliseconds",
+      expect.any(Number),
     );
   });
 
   it("uses metadata graph names for the feed and selected output", async () => {
-    const run = vi.fn<InferenceSessionLike["run"]>(async (feeds, fetches) => {
+    const run = vi.fn<InferenceSessionLike["run"]>((feeds, fetches) => {
       expect(Object.keys(feeds)).toEqual(["metadata_input"]);
       expect(feeds.metadata_input).toBeInstanceOf(Tensor);
       expect((feeds.metadata_input as Tensor).dims).toEqual([1, 3, 2, 2]);
       expect(fetches).toEqual(["metadata_output"]);
-      return {
+      return Promise.resolve({
         metadata_output: outputTensor(new Float32Array([0, 1, 2])),
-      };
+      });
     });
-
     await runModelInference(fakeSession(run), metadata, new Float32Array(12));
     expect(run).toHaveBeenCalledOnce();
   });
@@ -157,8 +163,8 @@ describe("runModelInference", () => {
     ["missing", {}],
     ["wrong value kind", { metadata_output: { type: "float32" } }],
   ])("rejects a %s metadata-defined output", async (_caseName, outputs) => {
-    const session = fakeSession(
-      async () => outputs as InferenceSession.ReturnType,
+    const session = fakeSession(() =>
+      Promise.resolve(outputs as InferenceSession.ReturnType),
     );
     await expectInferenceCode(
       runModelInference(session, metadata, new Float32Array(12)),
@@ -175,7 +181,9 @@ describe("runModelInference", () => {
       new Tensor("int32", new Int32Array([0, 1, 2]), [1, 3]),
     ],
   ])("rejects output with %s", async (_caseName, output) => {
-    const session = fakeSession(async () => ({ metadata_output: output }));
+    const session = fakeSession(() =>
+      Promise.resolve({ metadata_output: output }),
+    );
     await expectInferenceCode(
       runModelInference(session, metadata, new Float32Array(12)),
       InferenceErrorCode.INVALID_OUTPUT,
@@ -185,11 +193,13 @@ describe("runModelInference", () => {
   it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
     "rejects the non-finite logit %s",
     async (nonFiniteLogit) => {
-      const session = fakeSession(async () => ({
-        metadata_output: outputTensor(
-          new Float32Array([0, nonFiniteLogit, 2]),
-        ),
-      }));
+      const session = fakeSession(() =>
+        Promise.resolve({
+          metadata_output: outputTensor(
+            new Float32Array([0, nonFiniteLogit, 2]),
+          ),
+        }),
+      );
       await expectInferenceCode(
         runModelInference(session, metadata, new Float32Array(12)),
         InferenceErrorCode.NON_FINITE_OUTPUT,
@@ -199,19 +209,24 @@ describe("runModelInference", () => {
 
   it("wraps and preserves a session rejection", async () => {
     const runtimeCause = new Error("synthetic runtime rejection");
-    const session = fakeSession(async () => {
-      throw runtimeCause;
-    });
+    const session = fakeSession(() => Promise.reject(runtimeCause));
 
     const error = await expectInferenceCode(
       runModelInference(session, metadata, new Float32Array(12)),
       InferenceErrorCode.RUNTIME_EXECUTION_FAILED,
     );
     expect(error.cause).toBe(runtimeCause);
-    expect(console.error).toHaveBeenCalledWith("Model inference failed", {
-      code: InferenceErrorCode.RUNTIME_EXECUTION_FAILED,
-      durationMilliseconds: expect.any(Number),
-      inputElements: 12,
-    });
+    const errorLog = vi.spyOn(console, "error");
+    expect(errorLog).toHaveBeenCalledWith(
+      "Model inference failed",
+      expect.objectContaining({
+        code: InferenceErrorCode.RUNTIME_EXECUTION_FAILED,
+        inputElements: 12,
+      }),
+    );
+    expect(errorLog.mock.calls[0]?.[1]).toHaveProperty(
+      "durationMilliseconds",
+      expect.any(Number),
+    );
   });
 });

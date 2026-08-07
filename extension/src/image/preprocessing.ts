@@ -59,7 +59,7 @@ export class ImagePreprocessingError extends Error {
 export interface ResizedRgbaImage {
   readonly width: number;
   readonly height: number;
-  readonly data: Uint8ClampedArray<ArrayBufferLike>;
+  readonly data: Uint8ClampedArray;
 }
 
 export interface ImagePreprocessingDependencies {
@@ -165,14 +165,19 @@ export async function transformImageToModelInput(
 }
 
 function validateImage(image: DecodedImage): void {
+  const imageMetadata: Readonly<{
+    channelOrder: string;
+    colorSpace: string;
+    alphaMode: string;
+  }> = image;
   if (
     !Number.isSafeInteger(image.width) ||
     image.width <= 0 ||
     !Number.isSafeInteger(image.height) ||
     image.height <= 0 ||
-    image.channelOrder !== "RGBA" ||
-    image.colorSpace !== "srgb" ||
-    image.alphaMode !== "unpremultiplied"
+    imageMetadata.channelOrder !== "RGBA" ||
+    imageMetadata.colorSpace !== "srgb" ||
+    imageMetadata.alphaMode !== "unpremultiplied"
   ) {
     throw new ImagePreprocessingError(
       ImagePreprocessingErrorCode.INVALID_IMAGE,
@@ -308,14 +313,25 @@ function writeNormalizedPixel(
   output: Float32Array,
   outputOffset: number,
   channelPlaneLength: number,
-  pixels: Uint8ClampedArray<ArrayBufferLike>,
+  pixels: Uint8ClampedArray,
   sourceOffset: number,
   metadata: ModelMetadata,
 ): void {
-  const alpha =
-    pixels[sourceOffset + ALPHA_CHANNEL_INDEX]! / MAX_CHANNEL_VALUE;
+  const alphaValue = pixels.at(sourceOffset + ALPHA_CHANNEL_INDEX);
+  if (alphaValue === undefined) {
+    throw new ImagePreprocessingError(
+      ImagePreprocessingErrorCode.INVALID_RESIZE_OUTPUT,
+    );
+  }
+  const alpha = alphaValue / MAX_CHANNEL_VALUE;
   for (const channel of RGB_CHANNEL_INDICES) {
-    const composited = pixels[sourceOffset + channel]! * alpha;
+    const channelValue = pixels.at(sourceOffset + channel);
+    if (channelValue === undefined) {
+      throw new ImagePreprocessingError(
+        ImagePreprocessingErrorCode.INVALID_RESIZE_OUTPUT,
+      );
+    }
+    const composited = channelValue * alpha;
     const normalized =
       (composited * metadata.input.pixelScale - metadata.input.mean[channel]) /
       metadata.input.standardDeviation[channel];

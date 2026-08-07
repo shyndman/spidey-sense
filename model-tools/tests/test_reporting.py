@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal, TypedDict, cast
 
 from model_tools.evaluation.contracts import (
     AnnotationRecord,
@@ -11,8 +12,111 @@ from model_tools.evaluation.contracts import (
     SampleManifest,
     ScoreRecord,
 )
+from model_tools.evaluation.operating_points import Confusion
 from model_tools.evaluation.paths import EvaluationPaths
-from model_tools.evaluation.reporting import _report_model
+from model_tools.evaluation.reporting import report_model
+
+ExpectedPresence = Literal["positive", "hard_negative", "broad_negative"]
+Split = Literal["calibration", "test"]
+
+
+class StageSummary(TypedDict):
+    attempted: int
+    completed: int
+    skipped: int
+    failed: int
+
+
+class RecordAccounting(TypedDict):
+    manifest_records: int
+    annotation_records: int
+    score_records: int
+    joined_records: int
+    failure_count: int
+
+
+class FailureSummary(TypedDict):
+    total: int
+    by_code: dict[str, int]
+
+
+class ScoreStats(TypedDict):
+    count: int
+    mean_blocked_score: float | None
+    minimum_blocked_score: float | None
+    maximum_blocked_score: float | None
+
+
+class ConfidenceDecile(TypedDict):
+    lower: float
+    upper: float
+    count: int
+    detector_miss_count: int
+    mean_confidence: float | None
+    mean_absolute_pixel_area: float | None
+    mean_relative_image_area: float | None
+    mean_blocked_score: float | None
+    positive_count: int
+    negative_count: int
+
+
+class AreaBucket(TypedDict):
+    lower: float
+    upper: float | None
+    count: int
+    positive_count: int
+    negative_count: int
+    mean_blocked_score: float | None
+
+
+class AreaBins(TypedDict):
+    absolute_pixel_area: list[AreaBucket]
+    relative_image_area: list[AreaBucket]
+    detector_miss_count: int
+
+
+class ReportData(TypedDict):
+    schema_version: int
+    model_id: str
+    stage_summary: StageSummary
+    record_accounting: RecordAccounting
+    failures: FailureSummary
+    sample_count: int
+    detector_miss_count: int
+    threshold_curves: dict[Split, list[Confusion]]
+    standard_operating_points: dict[str, object]
+    by_source_category: dict[str, ScoreStats]
+    by_expected_presence: dict[str, ScoreStats]
+    detector_confidence_deciles: list[ConfidenceDecile]
+    top_box_area_bins: AreaBins
+
+JsonPrimitive = None | bool | int | float | str
+JsonValue = JsonPrimitive | list["JsonValue"] | dict[str, "JsonValue"]
+
+
+def _json_value(value: object) -> JsonValue:
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, list):
+        items = cast(list[object], cast(object, value))
+        return [_json_value(item) for item in items]
+    if isinstance(value, dict):
+        entries = cast(dict[object, object], cast(object, value))
+        result: dict[str, JsonValue] = {}
+        for key, item in entries.items():
+            if not isinstance(key, str):
+                raise AssertionError("JSON object keys must be strings")
+            result[key] = _json_value(item)
+        return result
+    raise AssertionError(f"unsupported JSON value: {type(value).__name__}")
+
+
+def _report_data(value: object) -> ReportData:
+    normalized = _json_value(value)
+    if not isinstance(normalized, dict):
+        raise AssertionError("report must be a JSON object")
+    return cast(ReportData, cast(object, normalized))
+
 
 _MODEL_ID = "evaluation-model"
 
@@ -21,8 +125,8 @@ def _manifest(
     sample_id: str,
     *,
     category: str,
-    expected_presence: str,
-    split: str,
+    expected_presence: ExpectedPresence,
+    split: Split,
 ) -> SampleManifest:
     return SampleManifest(
         sample_id=sample_id,
@@ -78,7 +182,7 @@ def _write_record(
 ) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{record.sample_id}.json"
-    path.write_text(record.model_dump_json(), encoding="utf-8")
+    _ = path.write_text(record.model_dump_json(), encoding="utf-8")
 
 
 def _write_fixture(paths: EvaluationPaths) -> None:
@@ -137,7 +241,7 @@ def _write_fixture(paths: EvaluationPaths) -> None:
 def test_report_keeps_split_curves_and_strata_aggregate_only(tmp_path: Path) -> None:
     paths = EvaluationPaths(tmp_path)
     _write_fixture(paths)
-    result = _report_model(paths, _MODEL_ID)
+    result = _report_data(report_model(paths, _MODEL_ID))
 
     assert result["stage_summary"] == {
         "attempted": 4,
@@ -146,7 +250,6 @@ def test_report_keeps_split_curves_and_strata_aggregate_only(tmp_path: Path) -> 
         "failed": 0,
     }
     curves = result["threshold_curves"]
-    assert isinstance(curves, dict)
     assert [item["threshold"] for item in curves["calibration"]] == [0.2, 0.7]
     assert curves["calibration"][0]["tp"] == 1
     assert curves["calibration"][0]["fn"] == 0
@@ -183,18 +286,23 @@ def test_report_keeps_split_curves_and_strata_aggregate_only(tmp_path: Path) -> 
     assert paths.model_report_path(_MODEL_ID).is_file()
     assert not list(paths.reports.glob("*.part"))
 
-    serialized = json.loads(
-        paths.model_report_path(_MODEL_ID).read_text(encoding="utf-8")
+    serialized_value = cast(
+        object,
+        json.loads(
+            paths.model_report_path(_MODEL_ID).read_text(encoding="utf-8")
+        ),
     )
+    serialized = _report_data(serialized_value)
     assert serialized == result
 
     def keys(value: object) -> list[str]:
-        if isinstance(value, dict):
-            return [key for key in value] + [
-                nested for child in value.values() for nested in keys(child)
+        normalized = _json_value(value)
+        if isinstance(normalized, dict):
+            return [key for key in normalized] + [
+                nested for child in normalized.values() for nested in keys(child)
             ]
-        if isinstance(value, list):
-            return [nested for child in value for nested in keys(child)]
+        if isinstance(normalized, list):
+            return [nested for child in normalized for nested in keys(child)]
         return []
 
     all_keys = keys(result)
@@ -220,11 +328,13 @@ def test_report_accounts_for_missing_invalid_and_unmatched_records(
     )
     _write_record(paths.manifests, manifest)
     paths.annotations.mkdir(parents=True, exist_ok=True)
-    (paths.annotations / "invalid.json").write_text("not json", encoding="utf-8")
+    _ = (paths.annotations / "invalid.json").write_text(
+        "not json", encoding="utf-8"
+    )
     paths.model_scores(_MODEL_ID).mkdir(parents=True, exist_ok=True)
     _write_record(paths.model_scores(_MODEL_ID), _score("extra", 0.4))
 
-    result = _report_model(paths, _MODEL_ID)
+    result = _report_data(report_model(paths, _MODEL_ID))
 
     assert result["record_accounting"]["joined_records"] == 0
     assert result["failures"]["total"] == 4

@@ -293,7 +293,7 @@ def _phrase_token_spans(tokenizer: object) -> dict[str, tuple[int, ...]]:
     return spans
 
 
-def _build_annotation(
+def build_annotation(
     sample: SampleManifest,
     processor: object,
     model: object,
@@ -396,7 +396,7 @@ def _write_failure(
         return
 
 
-def _load_runtime(
+def load_runtime(
     paths: EvaluationPaths,
 ) -> tuple[object, object, object, Literal["cpu", "cuda"]]:
     """Load detector dependencies lazily and choose one shared execution device."""
@@ -532,7 +532,7 @@ def annotate(paths: EvaluationPaths) -> StageSummary:
         failed=failed,
     )
     try:
-        torch, processor, model, device = _load_runtime(paths)
+        torch, processor, model, device = load_runtime(paths)
     except Exception:
         # Keep model-loading diagnostics out of stdout and failure records.
         for manifest_path, sample in pending:
@@ -645,10 +645,10 @@ def annotate(paths: EvaluationPaths) -> StageSummary:
                     raise TypeError("torch no_grad context unavailable")
                 context = candidate
             else:
-                context = _NullContext()
+                context = NullContext()
             with source_image, context:
                 image = source_image.convert("RGB")
-                record = _build_annotation(sample, processor, model, image, device)
+                record = build_annotation(sample, processor, model, image, device)
             _write_atomic(paths.annotation_path(sample.sample_id), record)
         except Exception:
             failed += 1
@@ -681,8 +681,8 @@ def annotate(paths: EvaluationPaths) -> StageSummary:
     )
 
 
-class _NullContext:
-    def __enter__(self) -> _NullContext:
+class NullContext:
+    def __enter__(self) -> NullContext:
         return self
 
     def __exit__(

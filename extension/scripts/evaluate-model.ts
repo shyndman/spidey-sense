@@ -52,9 +52,9 @@ const scoreRecordSchema = z
     schema_version: z.literal(SCORE_SCHEMA_VERSION),
     sample_id: z.string().min(1),
     probabilities: z
-      .array(z.number().finite().min(0).max(1))
+      .array(z.number().min(0).max(1))
       .length(PROBABILITY_COUNT),
-    blocked_score: z.number().finite().min(0).max(1),
+    blocked_score: z.number().min(0).max(1),
     top_index: z.number().int().min(0).max(PROBABILITY_COUNT - 1),
   })
   .readonly();
@@ -231,8 +231,8 @@ export function softmaxLogits(logits: ArrayLike<number>): Float32Array {
   }
   let maximum = Number.NEGATIVE_INFINITY;
   for (let index = 0; index < logits.length; index += 1) {
-    const value = logits[index]!;
-    if (!Number.isFinite(value)) {
+    const value = logits[index];
+    if (value === undefined || !Number.isFinite(value)) {
       throw new Error("non-finite logits");
     }
     maximum = Math.max(maximum, value);
@@ -241,7 +241,11 @@ export function softmaxLogits(logits: ArrayLike<number>): Float32Array {
   const probabilities = new Float32Array(logits.length);
   let sum = 0;
   for (let index = 0; index < logits.length; index += 1) {
-    const value = Math.exp(logits[index]! - maximum);
+    const logit = logits[index];
+    if (logit === undefined) {
+      throw new Error("invalid logits");
+    }
+    const value = Math.exp(logit - maximum);
     if (!Number.isFinite(value)) {
       throw new Error("non-finite softmax term");
     }
@@ -322,7 +326,7 @@ function validateBoundary(
     values.length !== 1 ||
     value === undefined ||
     value.name !== expectedName ||
-    value.isTensor !== true ||
+    !value.isTensor ||
     value.type !== expectedType ||
     value.shape === undefined ||
     !shapesMatch(value.shape, expectedShape)
@@ -515,7 +519,11 @@ async function loadModel(
   if (metadataNames.length !== 1) {
     throw new Error("model metadata unavailable");
   }
-  const metadataPath = join(paths.models, metadataNames[0]!);
+  const metadataName = metadataNames[0];
+  if (metadataName === undefined) {
+    throw new Error("model metadata unavailable");
+  }
+  const metadataPath = join(paths.models, metadataName);
   const metadata = parseModelMetadata(await readJson(metadataPath));
   const modelPath = safeChild(paths.models, metadata.model.filename);
   const session = await dependencies.createSession(modelPath);
@@ -581,7 +589,12 @@ async function scoreOne(
   const probabilities = softmaxLogits(output.data);
   let topIndex = 0;
   for (let index = 1; index < probabilities.length; index += 1) {
-    if (probabilities[index]! > probabilities[topIndex]!) {
+    const probability = probabilities[index];
+    const topProbability = probabilities[topIndex];
+    if (probability === undefined || topProbability === undefined) {
+      throw new Error("invalid probability");
+    }
+    if (probability > topProbability) {
       topIndex = index;
     }
   }
@@ -732,7 +745,10 @@ export async function score(
 function parseDataDir(argv: readonly string[]): string {
   let dataDir: string | undefined;
   for (let index = 0; index < argv.length; index += 1) {
-    const argument = argv[index]!;
+    const argument = argv[index];
+    if (argument === undefined) {
+      throw new Error("invalid arguments");
+    }
     if (argument === "--data-dir") {
       dataDir = argv[index + 1];
       index += 1;

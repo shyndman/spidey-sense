@@ -6,13 +6,22 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Final, Literal
 
-import structlog
+from structlog.stdlib import BoundLogger, get_logger
 
 from .acquire import BundlePaths, acquire_bundle, verify_bundle
 from .metadata import ArtifactMetadata
 
 _DISTRIBUTION: Final = "model-tools"
-_LOGGER = structlog.get_logger()
+_LOGGER: BoundLogger = get_logger()
+
+
+class _CommandNamespace(Namespace):
+    """Typed attributes populated by the command-line parser."""
+
+    command: str | None = None
+    manifest: Path | None = None
+    output_dir: Path | None = None
+    bundle_dir: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,7 +49,7 @@ def build_parser() -> ArgumentParser:
     """Build the command-line parser."""
 
     parser = ArgumentParser(prog="model-tools", description=__doc__)
-    parser.add_argument(
+    _ = parser.add_argument(
         "--version",
         action="version",
         version=f"%(prog)s {version(_DISTRIBUTION)}",
@@ -51,19 +60,21 @@ def build_parser() -> ArgumentParser:
         "acquire",
         help="Download or reuse the pinned model and generate verified metadata.",
     )
-    acquire.add_argument("--manifest", required=True, type=Path)
-    acquire.add_argument("--output-dir", required=True, type=Path)
+    _ = acquire.add_argument("--manifest", required=True, type=Path)
+    _ = acquire.add_argument("--output-dir", required=True, type=Path)
 
     verify = subparsers.add_parser(
         "verify",
         help="Verify an existing model bundle without network access.",
     )
-    verify.add_argument("--manifest", required=True, type=Path)
-    verify.add_argument("--bundle-dir", required=True, type=Path)
+    _ = verify.add_argument("--manifest", required=True, type=Path)
+    _ = verify.add_argument("--bundle-dir", required=True, type=Path)
     return parser
 
 
-def _command_from_namespace(parser: ArgumentParser, namespace: Namespace) -> Command:
+def _command_from_namespace(
+    parser: ArgumentParser, namespace: _CommandNamespace
+) -> Command:
     command = namespace.command
     manifest = namespace.manifest
     if not isinstance(manifest, Path):
@@ -142,7 +153,8 @@ def main() -> None:
     """Acquire or verify a model bundle and report one structured result."""
 
     parser = build_parser()
-    command = _command_from_namespace(parser, parser.parse_args())
+    namespace = parser.parse_args(namespace=_CommandNamespace())
+    command = _command_from_namespace(parser, namespace)
     try:
         paths, metadata = _run_command(command)
     except Exception as error:

@@ -180,7 +180,7 @@ def _consume_candidates(
     finally:
         close = getattr(candidates, "close", None)
         if callable(close):
-            close()
+            _ = close()
     return source_failed
 
 

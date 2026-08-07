@@ -51,8 +51,8 @@ const graphSession = (outputShape: readonly (number | string)[] = [
       shape: outputShape,
     },
   ],
-  async run() {
-    return {};
+  run() {
+    return Promise.resolve({});
   },
   async release() {},
 });
@@ -79,9 +79,9 @@ describe("evaluate-model numeric contracts", () => {
   });
 
   it("accepts dynamic batch graph dimensions and rejects class shape mismatch", () => {
-    expect(() => validateSessionGraph(graphSession(), metadata)).not.toThrow();
+    expect(() => { validateSessionGraph(graphSession(), metadata); }).not.toThrow();
     expect(() =>
-      validateSessionGraph(graphSession(["batch", 999]), metadata),
+      { validateSessionGraph(graphSession(["batch", 999]), metadata); },
     ).toThrow();
   });
   it("emits aggregate lifecycle events at the pending-manifest cadence", async () => {
@@ -104,7 +104,7 @@ describe("evaluate-model numeric contracts", () => {
     const labels = Array.from({ length: 1_000 }, (_, index) => ({
       index,
       synset: `n${String(index).padStart(8, "0")}`,
-      label: `label-${index}`,
+      label: `label-${String(index)}`,
     }));
     const scoringMetadata = {
       schemaVersion: 2,
@@ -140,7 +140,13 @@ describe("evaluate-model numeric contracts", () => {
         labels,
       },
       classes: {
-        blocked: [labels[7]!],
+        blocked: (() => {
+          const blockedLabel = labels[7];
+          if (blockedLabel === undefined) {
+            throw new Error("missing blocked test label");
+          }
+          return [blockedLabel];
+        })(),
         debug: [],
       },
     };
@@ -193,28 +199,29 @@ describe("evaluate-model numeric contracts", () => {
           shape: ["batch", 1_000],
         },
       ],
-      async run() {
-        return {
+      run() {
+        return Promise.resolve({
           output: {
             type: "float32",
             dims: [1, 1_000],
             data: new Float32Array(1_000),
           },
-        };
+        });
       },
       async release() {},
     };
     const dependencies = {
-      decodeJpeg: async () => ({
-        width: 2,
-        height: 2,
-        data: new Uint8ClampedArray(new ArrayBuffer(16)),
-        channelOrder: "RGBA" as const,
-        colorSpace: "srgb" as const,
-        alphaMode: "unpremultiplied" as const,
-      }),
-      transform: async () => new Float32Array(12),
-      createSession: async () => session,
+      decodeJpeg: () =>
+        Promise.resolve({
+          width: 2,
+          height: 2,
+          data: new Uint8ClampedArray(new ArrayBuffer(16)),
+          channelOrder: "RGBA" as const,
+          colorSpace: "srgb" as const,
+          alphaMode: "unpremultiplied" as const,
+        }),
+      transform: () => Promise.resolve(new Float32Array(12)),
+      createSession: () => Promise.resolve(session),
     };
     const stderrLines: string[] = [];
     const stderrWrite = vi

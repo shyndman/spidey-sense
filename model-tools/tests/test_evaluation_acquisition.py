@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Generator, Iterator
 from pathlib import Path
+from typing import cast
 from urllib.parse import parse_qs, urlsplit
 
+import pytest
 from model_tools.evaluation import (
     acquisition,
     coco,
@@ -18,6 +21,8 @@ from model_tools.evaluation.acquisition_types import (
     AcceptedSample,
     AcquisitionFailure,
     Candidate,
+    ExpectedPresence,
+    JsonObject,
 )
 from model_tools.evaluation.paths import EvaluationPaths
 
@@ -53,6 +58,24 @@ def _accepted(
     )
 
 
+def _results_payload(rows: list[JsonObject]) -> JsonObject:
+    payload: JsonObject = {}
+    payload["results"] = rows
+    return payload
+
+
+def _json_object(text: str) -> JsonObject:
+    loaded = cast(object, json.loads(text))
+    payload = materialization.json_object(loaded)
+    if payload is None:
+        raise AssertionError("expected a JSON object")
+    return payload
+
+
+def _events(stderr: str) -> list[JsonObject]:
+    return [_json_object(line) for line in stderr.splitlines() if line]
+
+
 def test_observation_photo_selection_requires_research_grade_and_public_license() -> (
     None
 ):
@@ -77,13 +100,13 @@ def test_observation_photo_selection_requires_research_grade_and_public_license(
             },
         ],
     }
-    assert inaturalist._choose_observation_photo(observation) == (
+    assert inaturalist.choose_observation_photo(observation) == (
         "42",
         "https://example.invalid/early.jpg",
         "cc-by-sa",
     )
     observation["quality_grade"] = "needs_id"
-    assert inaturalist._choose_observation_photo(observation) is None
+    assert inaturalist.choose_observation_photo(observation) is None
 
 
 def test_near_duplicate_groups_never_cross_deterministic_split() -> None:
@@ -127,33 +150,37 @@ def test_near_duplicate_groups_never_cross_deterministic_split() -> None:
 
 def test_shortage_summary_is_numeric_and_errors_contain_no_source_metadata(
     tmp_path: Path,
-    monkeypatch,
-    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     paths = EvaluationPaths(tmp_path)
-    monkeypatch.setattr(
-        inaturalist,
-        "iter_candidates",
-        lambda category, expected, need: iter(()),
-    )
-    monkeypatch.setattr(coco, "candidates", lambda paths, need: ([], 0))
-    monkeypatch.setattr(
-        model_bundle, "provision_model_bundle", lambda paths: True
-    )
+
+    def fake_inat(
+        _category: str, _expected: ExpectedPresence, _need: int
+    ) -> Iterator[Candidate]:
+        return iter(())
+
+    def fake_coco(
+        _paths: EvaluationPaths, _need: int
+    ) -> tuple[list[Candidate], int]:
+        return [], 0
+
+    def fake_provision(_paths: EvaluationPaths) -> bool:
+        return True
+
+    monkeypatch.setattr(inaturalist, "iter_candidates", fake_inat)
+    monkeypatch.setattr(coco, "candidates", fake_coco)
+    monkeypatch.setattr(model_bundle, "provision_model_bundle", fake_provision)
     summary = acquisition.acquire(paths)
     assert summary.attempted == 12_000
     assert summary.completed == 0
     assert summary.skipped == 0
     assert summary.failed == 12_000
     for error_path in paths.errors.glob("*.json"):
-        payload = json.loads(error_path.read_text(encoding="utf-8"))
+        payload = _json_object(error_path.read_text(encoding="utf-8"))
         assert set(payload) == {"schema_version", "stage", "code", "sample_id"}
         assert "http" not in error_path.read_text(encoding="utf-8").lower()
-    events = [
-        json.loads(line)
-        for line in capsys.readouterr().err.splitlines()
-        if line
-    ]
+    events = _events(capsys.readouterr().err)
     assert events[0]["event"] == "start"
     assert events[-1]["event"] == "complete"
     assert {event["event"] for event in events} >= {
@@ -184,34 +211,33 @@ def test_every_inaturalist_category_url_uses_numeric_taxon_id() -> None:
     }
     assert inaturalist.INATURALIST_TAXON_IDS == expected
     for category, taxon_id in expected.items():
-        query = parse_qs(urlsplit(inaturalist._inat_url(category, 3)).query)
+        query = parse_qs(urlsplit(inaturalist.inat_url(category, 3)).query)
         assert query["taxon_id"] == [str(taxon_id)]
         assert "taxon_name" not in query
 
 
 def test_source_page_and_cadenced_progress_events_are_aggregate_only(
-    monkeypatch,
-    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr(inaturalist, "INATURALIST_PAGE_SIZE", 2)
     monkeypatch.setattr(inaturalist, "INATURALIST_PROGRESS_PAGE_CADENCE", 2)
 
-    def fake_fetch(_url: str) -> dict[str, object]:
+    def fake_fetch(_url: str) -> JsonObject:
         page = int(parse_qs(urlsplit(_url).query)["page"][0])
         if page == 3:
-            return {"results": []}
-        return {"results": [{"id": page * 10 + index} for index in range(2)]}
+            return _results_payload([])
+        rows: list[JsonObject] = [
+            {"id": page * 10 + index} for index in range(2)
+        ]
+        return _results_payload(rows)
 
     monkeypatch.setattr(materialization, "fetch_json", fake_fetch)
     candidate_iterator = inaturalist.iter_candidates(
         "insecta", "hard_negative", 1
     )
     _ = list(candidate_iterator)
-    events = [
-        json.loads(line)
-        for line in capsys.readouterr().err.splitlines()
-        if line
-    ]
+    events = _events(capsys.readouterr().err)
     assert [event["event"] for event in events] == [
         "source_page",
         "source_page",
@@ -238,8 +264,8 @@ def test_source_page_and_cadenced_progress_events_are_aggregate_only(
 
 def test_materialization_errors_never_leak_source_or_exception_data(
     tmp_path: Path,
-    monkeypatch,
-    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     paths = EvaluationPaths(tmp_path)
     candidate = Candidate(
@@ -252,23 +278,32 @@ def test_materialization_errors_never_leak_source_or_exception_data(
         image_name="sample-secret.jpg",
     )
 
-    def fake_inat(category, expected, need):
+    def fake_inat(
+        category: str, _expected: ExpectedPresence, _need: int
+    ) -> Iterator[Candidate]:
         if category == "argiope_aurantia":
             return iter((candidate,))
         return iter(())
 
+    def fake_coco(
+        _paths: EvaluationPaths, _need: int
+    ) -> tuple[list[Candidate], int]:
+        return [], 0
+
+    def fake_materialize(
+        _paths: EvaluationPaths, _item: Candidate
+    ) -> AcceptedSample:
+        raise AcquisitionFailure("raw source failure https://secret.invalid")
+
+    def fake_provision(_paths: EvaluationPaths) -> bool:
+        return True
+
     monkeypatch.setattr(inaturalist, "iter_candidates", fake_inat)
-    monkeypatch.setattr(coco, "candidates", lambda paths, need: ([], 0))
+    monkeypatch.setattr(coco, "candidates", fake_coco)
     monkeypatch.setattr(
-        materialization,
-        "materialize_candidate",
-        lambda paths, item: (_ for _ in ()).throw(
-            AcquisitionFailure("raw source failure https://secret.invalid")
-        ),
+        materialization, "materialize_candidate", fake_materialize
     )
-    monkeypatch.setattr(
-        model_bundle, "provision_model_bundle", lambda paths: True
-    )
+    monkeypatch.setattr(model_bundle, "provision_model_bundle", fake_provision)
     _ = acquisition.acquire(paths)
     stderr = capsys.readouterr().err
     assert "secret.invalid" not in stderr
@@ -276,7 +311,7 @@ def test_materialization_errors_never_leak_source_or_exception_data(
     assert str(tmp_path) not in stderr
     assert "raw source failure" not in stderr
     assert all(
-        set(json.loads(line)) <= {
+        set(_json_object(line)) <= {
             "stage",
             "event",
             "category",
@@ -295,18 +330,22 @@ def test_materialization_errors_never_leak_source_or_exception_data(
     )
 
 
-def test_inaturalist_candidates_are_page_lazy_and_bounded(monkeypatch) -> None:
+def test_inaturalist_candidates_are_page_lazy_and_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(inaturalist, "INATURALIST_PAGE_SIZE", 2)
     calls: list[int] = []
 
-    def fake_fetch(url: str) -> dict[str, object]:
+    def fake_fetch(url: str) -> JsonObject:
         page = int(parse_qs(urlsplit(url).query)["page"][0])
         calls.append(page)
-        return {"results": [_observation(page * 10 + index) for index in range(2)]}
+        rows = [_observation(page * 10 + index) for index in range(2)]
+        return _results_payload(rows)
 
     monkeypatch.setattr(materialization, "fetch_json", fake_fetch)
-    candidate_iterator = inaturalist.iter_candidates(
-        "insecta", "hard_negative", 1
+    candidate_iterator = cast(
+        Generator[Candidate],
+        inaturalist.iter_candidates("insecta", "hard_negative", 1),
     )
     assert calls == []
     assert not isinstance(candidate_iterator, list)
@@ -316,14 +355,15 @@ def test_inaturalist_candidates_are_page_lazy_and_bounded(monkeypatch) -> None:
     candidate_iterator.close()
 
 
+
 def test_inaturalist_repeated_full_page_stops_with_bounded_fingerprint(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(inaturalist, "INATURALIST_PAGE_SIZE", 2)
     calls: list[int] = []
-    repeated_page = {"results": [_observation(10), _observation(11)]}
+    repeated_page = _results_payload([_observation(10), _observation(11)])
 
-    def fake_fetch(url: str) -> dict[str, object]:
+    def fake_fetch(url: str) -> JsonObject:
         page = int(parse_qs(urlsplit(url).query)["page"][0])
         calls.append(page)
         return repeated_page
@@ -338,7 +378,7 @@ def test_inaturalist_repeated_full_page_stops_with_bounded_fingerprint(
 
 def test_acquire_stops_huge_inaturalist_source_when_quota_is_filled(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(inaturalist, "INATURALIST_BUCKETS", ("insecta",))
     monkeypatch.setattr(inaturalist, "INATURALIST_HARD_NEGATIVE_BUCKETS", ())
@@ -346,16 +386,23 @@ def test_acquire_stops_huge_inaturalist_source_when_quota_is_filled(
     monkeypatch.setattr(inaturalist, "HARD_NEGATIVE_QUOTA", 0)
     monkeypatch.setattr(coco, "COCO_QUOTA", 0)
     monkeypatch.setattr(inaturalist, "INATURALIST_PAGE_SIZE", 2)
-    monkeypatch.setattr(model_bundle, "provision_model_bundle", lambda paths: True)
+
+    def fake_provision(_paths: EvaluationPaths) -> bool:
+        return True
+
+    monkeypatch.setattr(model_bundle, "provision_model_bundle", fake_provision)
     paths = EvaluationPaths(tmp_path)
     calls: list[int] = []
 
-    def fake_fetch(url: str) -> dict[str, object]:
+    def fake_fetch(url: str) -> JsonObject:
         page = int(parse_qs(urlsplit(url).query)["page"][0])
         calls.append(page)
-        return {"results": [_observation(page * 10 + index) for index in range(2)]}
+        rows = [_observation(page * 10 + index) for index in range(2)]
+        return _results_payload(rows)
 
-    def fake_materialize(paths, candidate):
+    def fake_materialize(
+        paths: EvaluationPaths, candidate: Candidate
+    ) -> AcceptedSample:
         return _accepted(
             candidate,
             paths.images / candidate.image_name,
@@ -372,8 +419,8 @@ def test_acquire_stops_huge_inaturalist_source_when_quota_is_filled(
 
 def test_acquire_uses_later_pages_after_resumed_duplicate_and_failure(
     tmp_path: Path,
-    monkeypatch,
-    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr(inaturalist, "INATURALIST_BUCKETS", ("insecta",))
     monkeypatch.setattr(inaturalist, "INATURALIST_HARD_NEGATIVE_BUCKETS", ())
@@ -382,7 +429,11 @@ def test_acquire_uses_later_pages_after_resumed_duplicate_and_failure(
     monkeypatch.setattr(coco, "COCO_QUOTA", 0)
     monkeypatch.setattr(inaturalist, "INATURALIST_PAGE_SIZE", 2)
     monkeypatch.setattr(acquisition, "_MATERIALIZATION_PROGRESS_ATTEMPT_CADENCE", 1)
-    monkeypatch.setattr(model_bundle, "provision_model_bundle", lambda paths: True)
+
+    def fake_provision(_paths: EvaluationPaths) -> bool:
+        return True
+
+    monkeypatch.setattr(model_bundle, "provision_model_bundle", fake_provision)
     paths = EvaluationPaths(tmp_path)
     resumed_candidate = Candidate(
         source="inaturalist",
@@ -398,19 +449,25 @@ def test_acquire_uses_later_pages_after_resumed_duplicate_and_failure(
         paths.images / "existing.jpg",
         "existing-sha",
     )
-    monkeypatch.setattr(corpus, "load_existing", lambda paths: [resumed])
-    pages = {
-        1: {"results": [_observation(100), _observation(101)]},
-        2: {"results": [_observation(102), _observation(103)]},
+    def fake_load_existing(_paths: EvaluationPaths) -> list[AcceptedSample]:
+        return [resumed]
+
+
+    monkeypatch.setattr(corpus, "load_existing", fake_load_existing)
+    pages: dict[int, JsonObject] = {
+        1: _results_payload([_observation(100), _observation(101)]),
+        2: _results_payload([_observation(102), _observation(103)]),
     }
     calls: list[int] = []
 
-    def fake_fetch(url: str) -> dict[str, object]:
+    def fake_fetch(url: str) -> JsonObject:
         page = int(parse_qs(urlsplit(url).query)["page"][0])
         calls.append(page)
         return pages[page]
 
-    def fake_materialize(paths, candidate):
+    def fake_materialize(
+        paths: EvaluationPaths, candidate: Candidate
+    ) -> AcceptedSample:
         if candidate.source_id == "101":
             raise AcquisitionFailure("DOWNLOAD_FAILED")
         sha = "existing-sha" if candidate.source_id == "100" else "new-sha"
@@ -422,17 +479,17 @@ def test_acquire_uses_later_pages_after_resumed_duplicate_and_failure(
 
     monkeypatch.setattr(materialization, "fetch_json", fake_fetch)
     monkeypatch.setattr(materialization, "materialize_candidate", fake_materialize)
-    monkeypatch.setattr(corpus, "write_manifest", lambda paths, item: None)
+
+    def fake_write_manifest(_paths: EvaluationPaths, _item: AcceptedSample) -> None:
+        return None
+
+    monkeypatch.setattr(corpus, "write_manifest", fake_write_manifest)
     summary = acquisition.acquire(paths)
     assert summary.completed == 1
     assert summary.skipped == 1
     assert summary.failed == 1
     assert calls == [1, 2]
-    events = [
-        json.loads(line)
-        for line in capsys.readouterr().err.splitlines()
-        if line
-    ]
+    events = _events(capsys.readouterr().err)
     progress_indices = [
         index for index, event in enumerate(events) if event["event"] == "progress"
     ]

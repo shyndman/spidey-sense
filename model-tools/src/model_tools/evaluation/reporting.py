@@ -317,7 +317,7 @@ def _standard_operating_points(
     return operating_points(samples)
 
 
-def _report_model(paths: EvaluationPaths, model_id: str) -> dict[str, object]:
+def report_model(paths: EvaluationPaths, model_id: str) -> dict[str, object]:
     """Join one model's records and emit deterministic aggregate evidence."""
     paths.ensure()
     manifests, manifest_failures, manifest_attempted = _read_records(
@@ -399,10 +399,10 @@ def report(paths: EvaluationPaths) -> dict[str, object]:
 
     paths.ensure()
     reports = {
-        model_id: _report_model(paths, model_id)
+        model_id: report_model(paths, model_id)
         for model_id in registered_model_ids(paths)
     }
     return {"schema_version": 2, "models": reports}
 
 
-__all__ = ["report"]
+__all__ = ["report", "report_model"]

@@ -109,11 +109,18 @@ async function executeInference(
   );
   const probabilities = softmax(logits);
   const topIndex = findTopIndex(probabilities);
-  const topLabel = metadata.output.labels[topIndex]!;
+  const topLabel = requireValue(
+    metadata.output.labels[topIndex],
+    "The output tensor does not contain a top prediction label",
+  );
+  const topProbability = requireValue(
+    probabilities[topIndex],
+    "The output tensor does not contain a top prediction probability",
+  );
 
   return {
     probabilities,
-    topPrediction: { ...topLabel, probability: probabilities[topIndex]! },
+    topPrediction: { ...topLabel, probability: topProbability },
     blockedScore: sumClassGroup(probabilities, metadata.classes.blocked),
     debugScore: sumClassGroup(probabilities, metadata.classes.debug),
   };
@@ -135,7 +142,7 @@ function createInputTensor(
   if (input.length !== expectedInputLength) {
     throw new InferenceError(
       InferenceErrorCode.INVALID_INPUT,
-      `Expected ${expectedInputLength} float32 input values, received ${input.length}`,
+      `Expected ${String(expectedInputLength)} float32 input values, received ${String(input.length)}`,
     );
   }
 
@@ -194,16 +201,24 @@ function softmax(logits: Float32Array): Float32Array {
     }
     if (logit > maximumLogit) maximumLogit = logit;
   }
-
   const probabilities = new Float32Array(logits.length);
   let exponentialSum = 0;
+
   for (let index = 0; index < logits.length; index += 1) {
-    const exponential = Math.exp(logits[index]! - maximumLogit);
+    const logit = requireValue(
+      logits[index],
+      "The output tensor is missing a required logit",
+    );
+    const exponential = Math.exp(logit - maximumLogit);
     probabilities[index] = exponential;
     exponentialSum += exponential;
   }
   for (let index = 0; index < probabilities.length; index += 1) {
-    probabilities[index] = probabilities[index]! / exponentialSum;
+    const probability = requireValue(
+      probabilities[index],
+      "The output tensor is missing a required probability",
+    );
+    probabilities[index] = probability / exponentialSum;
   }
   return probabilities;
 }
@@ -212,7 +227,10 @@ function findTopIndex(probabilities: Float32Array): number {
   let topIndex = 0;
   let topProbability = Number.NEGATIVE_INFINITY;
   for (let index = 0; index < probabilities.length; index += 1) {
-    const probability = probabilities[index]!;
+    const probability = requireValue(
+      probabilities[index],
+      "The output tensor is missing a required probability",
+    );
     if (probability > topProbability) {
       topProbability = probability;
       topIndex = index;
@@ -226,6 +244,18 @@ function sumClassGroup(
   labels: readonly ModelLabel[],
 ): number {
   let sum = 0;
-  for (const label of labels) sum += probabilities[label.index]!;
+  for (const label of labels) {
+    sum += requireValue(
+      probabilities[label.index],
+      "The output tensor is missing a required class probability",
+    );
+  }
   return sum;
+}
+
+function requireValue<T>(value: T | undefined, message: string): T {
+  if (value === undefined) {
+    throw new InferenceError(InferenceErrorCode.INVALID_OUTPUT, message);
+  }
+  return value;
 }

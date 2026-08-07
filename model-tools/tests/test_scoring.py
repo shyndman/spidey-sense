@@ -5,9 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from numpy.typing import NDArray
-from PIL import Image
-
+import pytest
 from model_tools.evaluation import scoring
 from model_tools.evaluation.contracts import SampleManifest, ScoreRecord
 from model_tools.evaluation.paths import EvaluationPaths
@@ -19,6 +17,9 @@ from model_tools.metadata import (
     ModelMetadata,
     OutputMetadata,
 )
+from numpy.typing import NDArray
+from PIL import Image
+from pydantic import HttpUrl
 
 _MODEL_ID = "evaluation-model"
 
@@ -67,7 +68,7 @@ def _artifact_metadata() -> ArtifactMetadata:
             size_bytes=1,
             format="onnx",
             opset=17,
-            source_url="https://example.invalid/model",
+            source_url=HttpUrl("https://example.invalid/model"),
             source_revision="pinned",
         ),
         input=_input_metadata(),
@@ -95,14 +96,14 @@ def test_preprocess_contains_and_black_pads_proxy(tmp_path: Path) -> None:
     tensor = scoring.preprocess_image(image_path, _input_metadata())
 
     assert tensor.shape == (1, 3, 4, 4)
-    assert bool(np.all(tensor[:, :, 0, :] == 0.0))
-    assert bool(np.all(tensor[:, :, 3, :] == 0.0))
-    assert bool(np.all(tensor[:, :, 1:3, :] == 1.0))
+    expected = np.zeros_like(tensor)
+    expected[:, :, 1:3, :] = 1.0
+    assert bool(np.all(np.equal(tensor, expected)))
 
 
 def test_score_model_writes_isolated_record_and_resumes(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     paths = EvaluationPaths(tmp_path)
     paths.ensure()
@@ -131,7 +132,10 @@ def test_score_model_writes_isolated_record_and_resumes(
     )
     load_calls = 0
 
-    def fake_load(_paths, _model_id):
+    def fake_load(
+        _paths: EvaluationPaths,
+        _model_id: str,
+    ) -> scoring.LoadedModel:
         nonlocal load_calls
         load_calls += 1
         return loaded

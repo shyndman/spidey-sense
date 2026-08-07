@@ -250,7 +250,7 @@ function svgContainsAnimation(bytes: Uint8Array<ArrayBuffer>): boolean {
   }
 
   for (const style of document.querySelectorAll("style")) {
-    if (CSS_ANIMATION_DECLARATION_PATTERN.test(style.textContent ?? "")) {
+    if (CSS_ANIMATION_DECLARATION_PATTERN.test(style.textContent)) {
       return true;
     }
   }

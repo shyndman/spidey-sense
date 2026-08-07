@@ -3,16 +3,33 @@ from __future__ import annotations
 
 import json
 import math
+from pathlib import Path
+from typing import Literal, TypeGuard, cast
 
+import pytest
 from model_tools.evaluation import annotation
 from model_tools.evaluation.annotation import (
     MAX_DETECTIONS,
-    _build_annotation,
+    build_annotation,
     convert_normalized_boxes_to_pixel_xyxy,
     rank_target_aligned_proposals,
 )
-from model_tools.evaluation.contracts import SampleManifest
+from model_tools.evaluation.contracts import AnnotationRecord, SampleManifest
 from model_tools.evaluation.paths import EvaluationPaths
+
+
+def _is_json_object(value: object) -> TypeGuard[dict[str, object]]:
+    if not isinstance(value, dict):
+        return False
+    candidate: dict[object, object] = cast(dict[object, object], value)
+    return all(isinstance(key, str) for key in candidate)
+
+
+def _parse_json_object(line: str) -> dict[str, object]:
+    value: object = cast(object, json.loads(line))
+    if not _is_json_object(value):
+        raise TypeError("expected JSON object")
+    return value
 
 
 def test_box_conversion_is_pixel_xyxy_and_finite() -> None:
@@ -98,7 +115,7 @@ def test_build_annotation_emits_contract_record_from_numeric_model_output() -> N
         height=48,
     )
 
-    record = _build_annotation(sample, FakeProcessor(), FakeModel(), image=None)
+    record = build_annotation(sample, FakeProcessor(), FakeModel(), image=None)
 
     assert record.sample_id == sample.sample_id
     assert len(record.detections) == MAX_DETECTIONS
@@ -114,14 +131,17 @@ def test_build_annotation_emits_contract_record_from_numeric_model_output() -> N
     )
 
 
-def test_load_runtime_selects_cuda_and_moves_model_to_it(tmp_path, monkeypatch) -> None:
+def test_load_runtime_selects_cuda_and_moves_model_to_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class FakeCuda:
         @staticmethod
         def is_available() -> bool:
             return True
 
     class FakeTorch:
-        cuda = FakeCuda()
+        cuda: FakeCuda = FakeCuda()
 
     class FakeModel:
         def __init__(self) -> None:
@@ -139,28 +159,33 @@ def test_load_runtime_selects_cuda_and_moves_model_to_it(tmp_path, monkeypatch) 
     class FakeProcessorClass:
         @staticmethod
         def from_pretrained(_checkpoint: str, *, cache_dir: str) -> object:
+            _ = cache_dir
             return object()
 
     class FakeModelClass:
         @staticmethod
         def from_pretrained(_checkpoint: str, *, cache_dir: str) -> FakeModel:
+            _ = cache_dir
             return fake_model
 
     class FakeTransformers:
-        AutoProcessor = FakeProcessorClass
-        AutoModelForZeroShotObjectDetection = FakeModelClass
+        AutoProcessor: type[FakeProcessorClass] = FakeProcessorClass
+        AutoModelForZeroShotObjectDetection: type[FakeModelClass] = FakeModelClass
 
     modules: dict[str, object] = {
         "torch": FakeTorch(),
         "transformers": FakeTransformers,
     }
+
+    def fake_import_module(name: str) -> object:
+        return modules[name]
+
     monkeypatch.setattr(
-        annotation.importlib,
-        "import_module",
-        lambda name: modules[name],
+        "model_tools.evaluation.annotation.importlib.import_module",
+        fake_import_module,
     )
 
-    _torch, _processor, model, device = annotation._load_runtime(
+    _torch, _processor, model, device = annotation.load_runtime(
         EvaluationPaths(tmp_path)
     )
 
@@ -169,14 +194,17 @@ def test_load_runtime_selects_cuda_and_moves_model_to_it(tmp_path, monkeypatch) 
     assert fake_model.devices == ["cuda"]
 
 
-def test_load_runtime_falls_back_to_cpu_without_cuda(tmp_path, monkeypatch) -> None:
+def test_load_runtime_falls_back_to_cpu_without_cuda(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class FakeCuda:
         @staticmethod
         def is_available() -> bool:
             return False
 
     class FakeTorch:
-        cuda = FakeCuda()
+        cuda: FakeCuda = FakeCuda()
 
     class FakeModel:
         def __init__(self) -> None:
@@ -194,28 +222,33 @@ def test_load_runtime_falls_back_to_cpu_without_cuda(tmp_path, monkeypatch) -> N
     class FakeProcessorClass:
         @staticmethod
         def from_pretrained(_checkpoint: str, *, cache_dir: str) -> object:
+            _ = cache_dir
             return object()
 
     class FakeModelClass:
         @staticmethod
         def from_pretrained(_checkpoint: str, *, cache_dir: str) -> FakeModel:
+            _ = cache_dir
             return fake_model
 
     class FakeTransformers:
-        AutoProcessor = FakeProcessorClass
-        AutoModelForZeroShotObjectDetection = FakeModelClass
+        AutoProcessor: type[FakeProcessorClass] = FakeProcessorClass
+        AutoModelForZeroShotObjectDetection: type[FakeModelClass] = FakeModelClass
 
     modules: dict[str, object] = {
         "torch": FakeTorch(),
         "transformers": FakeTransformers,
     }
+
+    def fake_import_module(name: str) -> object:
+        return modules[name]
+
     monkeypatch.setattr(
-        annotation.importlib,
-        "import_module",
-        lambda name: modules[name],
+        "model_tools.evaluation.annotation.importlib.import_module",
+        fake_import_module,
     )
 
-    _torch, _processor, model, device = annotation._load_runtime(
+    _torch, _processor, model, device = annotation.load_runtime(
         EvaluationPaths(tmp_path)
     )
 
@@ -266,7 +299,7 @@ def test_build_annotation_moves_processed_inputs_to_selected_device() -> None:
         height=48,
     )
 
-    _ = _build_annotation(
+    _ = build_annotation(
         sample,
         FakeProcessor(),
         FakeModel(),
@@ -278,9 +311,9 @@ def test_build_annotation_moves_processed_inputs_to_selected_device() -> None:
 
 
 def test_annotate_emits_sanitized_lifecycle_and_cadenced_progress(
-    tmp_path,
-    monkeypatch,
-    capsys,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     class FakeImage:
         def __enter__(self) -> FakeImage:
@@ -299,8 +332,8 @@ def test_annotate_emits_sanitized_lifecycle_and_cadenced_progress(
 
     class FakeTorch:
         @staticmethod
-        def no_grad() -> annotation._NullContext:
-            return annotation._NullContext()
+        def no_grad() -> annotation.NullContext:
+            return annotation.NullContext()
 
     paths = EvaluationPaths(tmp_path)
     paths.ensure()
@@ -329,24 +362,46 @@ def test_annotate_emits_sanitized_lifecycle_and_cadenced_progress(
         )
         _ = (paths.images / image_name).write_bytes(b"image")
 
+    def fake_load_runtime(
+        _paths: EvaluationPaths,
+    ) -> tuple[object, object, object, Literal["cpu"]]:
+        return FakeTorch(), object(), object(), "cpu"
+
+    monkeypatch.setattr(annotation, "load_runtime", fake_load_runtime)
+
+    def fake_import_module(_name: str) -> type[FakeImageModule]:
+        return FakeImageModule
+
     monkeypatch.setattr(
-        annotation,
-        "_load_runtime",
-        lambda _paths: (FakeTorch(), object(), object(), "cpu"),
+        "model_tools.evaluation.annotation.importlib.import_module",
+        fake_import_module,
     )
-    monkeypatch.setattr(
-        annotation.importlib,
-        "import_module",
-        lambda _name: FakeImageModule,
-    )
-    monkeypatch.setattr(annotation, "_build_annotation", lambda *_args: object())
-    monkeypatch.setattr(annotation, "_write_atomic", lambda *_args: None)
+
+    def fake_build_annotation(
+        _sample: SampleManifest,
+        _processor: object,
+        _model: object,
+        _image: object,
+        _device: Literal["cpu", "cuda"] = "cpu",
+    ) -> AnnotationRecord:
+        return AnnotationRecord(
+            sample_id="unused",
+            detections=(),
+            max_confidence=0.0,
+        )
+
+    monkeypatch.setattr(annotation, "build_annotation", fake_build_annotation)
+
+    def fake_write_atomic(_destination: Path, _model: object) -> None:
+        return None
+
+    monkeypatch.setattr(annotation, "_write_atomic", fake_write_atomic)
 
     summary = annotation.annotate(paths)
 
     stderr = capsys.readouterr().err
     events = [
-        json.loads(line)
+        _parse_json_object(line)
         for line in stderr.splitlines()
         if line
     ]

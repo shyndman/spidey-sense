@@ -5,7 +5,7 @@ the browser runtime: it records the exact graph, preprocessing, labels, and sema
 class groups needed to consume the model without duplicating constants in TypeScript.
 """
 
-from typing import Annotated, Literal, cast
+from typing import Annotated, ClassVar, Literal, cast
 
 from pydantic import (
     BaseModel,
@@ -31,7 +31,7 @@ def _tuple_from_toml(value: object) -> object:
 class ContractModel(BaseModel):
     """Reject unknown or weakly typed contract data."""
 
-    model_config = ConfigDict(
+    model_config: ClassVar[ConfigDict] = ConfigDict(
         alias_generator=lambda value: (
             value.split("_")[0] + "".join(part.title() for part in value.split("_")[1:])
         ),
@@ -113,7 +113,6 @@ class GraphSource(ContractModel):
     input: GraphInputSource
     output: GraphOutputSource
 
-
 class PreprocessingSource(ContractModel):
     """Image-to-tensor transform selected for complete source-image coverage."""
 
@@ -127,11 +126,14 @@ class PreprocessingSource(ContractModel):
     mean: tuple[float, float, float]
     standard_deviation: tuple[float, float, float]
 
-    _convert_toml_arrays = field_validator(
+    @field_validator(
         "mean",
         "standard_deviation",
         mode="before",
-    )(_tuple_from_toml)
+    )
+    @classmethod
+    def _convert_toml_arrays(cls, value: object) -> object:
+        return _tuple_from_toml(value)
 
 
 class PostprocessingSource(ContractModel):
@@ -146,11 +148,14 @@ class ClassesSource(ContractModel):
     blocked_synsets: tuple[Synset, ...]
     debug_synsets: tuple[Synset, ...]
 
-    _convert_toml_arrays = field_validator(
+    @field_validator(
         "blocked_synsets",
         "debug_synsets",
         mode="before",
-    )(_tuple_from_toml)
+    )
+    @classmethod
+    def _convert_toml_arrays(cls, value: object) -> object:
+        return _tuple_from_toml(value)
 
 
 class SourceManifest(ContractModel):

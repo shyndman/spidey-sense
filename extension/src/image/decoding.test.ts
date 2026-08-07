@@ -39,9 +39,11 @@ function installBrowserStubs(
     displayHeight: 1,
     displayWidth: 1,
   } as unknown as VideoFrame;
-  const decode = vi.fn<() => Promise<ImageDecodeResult>>(async () => {
-    if (options.decodeError !== undefined) throw options.decodeError;
-    return { complete: true, image: frame };
+  const decode = vi.fn<() => Promise<ImageDecodeResult>>(() => {
+    if (options.decodeError !== undefined) {
+      return Promise.reject(options.decodeError);
+    }
+    return Promise.resolve({ complete: true, image: frame });
   });
   const track: ImageTrack = {
     animated,
@@ -59,8 +61,9 @@ function installBrowserStubs(
   };
 
   class StubImageDecoder {
-    static async isTypeSupported(_type: string): Promise<boolean> {
-      return supported;
+    static isTypeSupported(type: string): Promise<boolean> {
+      void type;
+      return Promise.resolve(supported);
     }
 
     readonly complete = true;
@@ -76,7 +79,8 @@ function installBrowserStubs(
       closeDecoder();
     }
 
-    decode(_options?: ImageDecodeOptions): Promise<ImageDecodeResult> {
+    decode(options?: ImageDecodeOptions): Promise<ImageDecodeResult> {
+      void options;
       return decode();
     }
 
@@ -138,6 +142,7 @@ describe("selectImageResponse", () => {
 describe("decodeImage", () => {
   it("returns unpremultiplied RGBA8 sRGB pixels and releases decoder resources", async () => {
     const debugLog = vi.spyOn(console, "debug").mockImplementation(() => undefined);
+    const durationMatcher: unknown = expect.any(Number);
     const browser = installBrowserStubs();
 
     const decoded = await decodeImage(new Uint8Array([1, 2, 3]), "image/png");
@@ -157,7 +162,7 @@ describe("decodeImage", () => {
     expect(debugLog).toHaveBeenCalledExactlyOnceWith(
       "Image response decoded into the in-memory pixel boundary",
       {
-        durationMilliseconds: expect.any(Number),
+        durationMilliseconds: durationMatcher,
         encodedBytes: 3,
         mimeType: "image/png",
         width: 1,
@@ -195,6 +200,7 @@ describe("decodeImage", () => {
 
   it("reports malformed bytes without logging their contents", async () => {
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const durationMatcher: unknown = expect.any(Number);
     installBrowserStubs({
       decodeError: new Error("sensitive-byte-sentinel"),
     });
@@ -208,7 +214,7 @@ describe("decodeImage", () => {
     expect(errorLog).toHaveBeenCalledExactlyOnceWith(
       "Image decoding stopped: DECODE_FAILED",
       {
-        durationMilliseconds: expect.any(Number),
+        durationMilliseconds: durationMatcher,
         encodedBytes: 3,
         mimeType: "image/png",
       },

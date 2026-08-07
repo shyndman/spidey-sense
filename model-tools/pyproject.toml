@@ -53,6 +53,4 @@ target-version = "py313"
 select = ["B", "E", "F", "I", "UP"]
 
 [tool.basedpyright]
-pythonVersion = "3.13"
-typeCheckingMode = "strict"
-include = ["src"]
+typeCheckingMode = "recommended"
