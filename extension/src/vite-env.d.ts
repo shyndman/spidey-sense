@@ -7,3 +7,8 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+declare module '*?bytes' {
+  const bytes: Uint8Array<ArrayBuffer>;
+  export default bytes;
+}

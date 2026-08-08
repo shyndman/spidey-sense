@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url';
 
 import { defineConfig } from 'wxt';
 
+import { IMAGE_HOST_PATTERNS } from './src/network/image-host-patterns.ts';
+import { byteImportPlugin } from './vite/byte-import-plugin.ts';
+
 const wasmSource = fileURLToPath(
   import.meta.resolve('onnxruntime-web/ort-wasm-simd-threaded.wasm'),
 );
@@ -33,6 +36,7 @@ const [wasmAsset, wasmModuleAsset] = runtimeAssets;
 
 export default defineConfig({
   vite: () => ({
+    plugins: [byteImportPlugin()],
     define: {
       'import.meta.env.WXT_ONNX_WASM_FILENAME': JSON.stringify(
         wasmAsset.filename,
@@ -67,15 +71,9 @@ export default defineConfig({
   manifest: {
     permissions: ['webRequest', 'webRequestBlocking'],
     host_permissions: [
-      // Reddit
-      'https://external-preview.redd.it/*',
-      'https://preview.redd.it/*',
-      'https://i.redd.it/*',
+      ...IMAGE_HOST_PATTERNS,
       'https://www.reddit.com/*',
-
-      // YouTube
       'https://www.youtube.com/*',
-      'https://yt3.ggpht.com/*',
     ],
     content_security_policy: {
       extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",

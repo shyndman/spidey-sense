@@ -1,8 +1,8 @@
-import { registerImagePassThrough } from '../src/network/image-pass-through';
+import { registerImageReplacement } from '../src/network/image-replacement';
 import { configureOnnxRuntime } from '../src/model/runtime-environment';
 
 export default defineBackground(() => {
   configureOnnxRuntime();
-  registerImagePassThrough();
+  registerImageReplacement();
   console.info('spidey-sense background runtime started');
 });
