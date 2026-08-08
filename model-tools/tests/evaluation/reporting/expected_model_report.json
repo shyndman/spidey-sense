@@ -1,0 +1,474 @@
+{
+  "schema_version": 2,
+  "model_id": "evaluation-model",
+  "stage_summary": {
+    "attempted": 4,
+    "completed": 4,
+    "skipped": 0,
+    "failed": 0
+  },
+  "record_accounting": {
+    "manifest_records": 4,
+    "annotation_records": 4,
+    "score_records": 4,
+    "joined_records": 4,
+    "failure_count": 0
+  },
+  "failures": {
+    "total": 0,
+    "by_code": {}
+  },
+  "sample_count": 4,
+  "detector_miss_count": 1,
+  "threshold_curves": {
+    "calibration": [
+      {
+        "threshold": 0.2,
+        "tp": 1,
+        "fn": 0,
+        "fp": 1,
+        "tn": 0,
+        "tpr": 1.0,
+        "fpr": 1.0,
+        "precision": 0.5
+      },
+      {
+        "threshold": 0.7,
+        "tp": 0,
+        "fn": 1,
+        "fp": 1,
+        "tn": 0,
+        "tpr": 0.0,
+        "fpr": 1.0,
+        "precision": 0.0
+      }
+    ],
+    "test": [
+      {
+        "threshold": 0.1,
+        "tp": 1,
+        "fn": 0,
+        "fp": 1,
+        "tn": 0,
+        "tpr": 1.0,
+        "fpr": 1.0,
+        "precision": 0.5
+      },
+      {
+        "threshold": 0.8,
+        "tp": 1,
+        "fn": 0,
+        "fp": 0,
+        "tn": 1,
+        "tpr": 1.0,
+        "fpr": 0.0,
+        "precision": 1.0
+      }
+    ]
+  },
+  "standard_operating_points": {
+    "maximum_calibration_f1": {
+      "threshold": 0.2,
+      "calibration": {
+        "threshold": 0.2,
+        "tp": 1,
+        "fn": 0,
+        "fp": 1,
+        "tn": 0,
+        "tpr": 1.0,
+        "fpr": 1.0,
+        "precision": 0.5
+      },
+      "test": {
+        "target": {
+          "count": 1,
+          "total": 1,
+          "rate": 1.0
+        },
+        "lookalike": {
+          "count": 0,
+          "total": 0,
+          "rate": null
+        },
+        "ordinary_negative": {
+          "count": 0,
+          "total": 1,
+          "rate": 0.0
+        }
+      }
+    },
+    "ordinary_negative_fpr_at_most_1_percent": {
+      "threshold": 0.7000000000000001,
+      "calibration": {
+        "threshold": 0.7000000000000001,
+        "tp": 0,
+        "fn": 1,
+        "fp": 0,
+        "tn": 1,
+        "tpr": 0.0,
+        "fpr": 0.0,
+        "precision": null
+      },
+      "test": {
+        "target": {
+          "count": 1,
+          "total": 1,
+          "rate": 1.0
+        },
+        "lookalike": {
+          "count": 0,
+          "total": 0,
+          "rate": null
+        },
+        "ordinary_negative": {
+          "count": 0,
+          "total": 1,
+          "rate": 0.0
+        }
+      }
+    },
+    "target_tpr_at_least_97_percent": {
+      "threshold": 0.2,
+      "calibration": {
+        "threshold": 0.2,
+        "tp": 1,
+        "fn": 0,
+        "fp": 1,
+        "tn": 0,
+        "tpr": 1.0,
+        "fpr": 1.0,
+        "precision": 0.5
+      },
+      "test": {
+        "target": {
+          "count": 1,
+          "total": 1,
+          "rate": 1.0
+        },
+        "lookalike": {
+          "count": 0,
+          "total": 0,
+          "rate": null
+        },
+        "ordinary_negative": {
+          "count": 0,
+          "total": 1,
+          "rate": 0.0
+        }
+      }
+    },
+    "fixed_0_5": {
+      "threshold": 0.5,
+      "calibration": {
+        "threshold": 0.5,
+        "tp": 0,
+        "fn": 1,
+        "fp": 1,
+        "tn": 0,
+        "tpr": 0.0,
+        "fpr": 1.0,
+        "precision": 0.0
+      },
+      "test": {
+        "target": {
+          "count": 1,
+          "total": 1,
+          "rate": 1.0
+        },
+        "lookalike": {
+          "count": 0,
+          "total": 0,
+          "rate": null
+        },
+        "ordinary_negative": {
+          "count": 0,
+          "total": 1,
+          "rate": 0.0
+        }
+      }
+    }
+  },
+  "by_source_category": {
+    "proxy-background": {
+      "count": 2,
+      "mean_blocked_score": 0.39999999999999997,
+      "minimum_blocked_score": 0.1,
+      "maximum_blocked_score": 0.7
+    },
+    "proxy-group-a": {
+      "count": 1,
+      "mean_blocked_score": 0.2,
+      "minimum_blocked_score": 0.2,
+      "maximum_blocked_score": 0.2
+    },
+    "proxy-group-b": {
+      "count": 1,
+      "mean_blocked_score": 0.8,
+      "minimum_blocked_score": 0.8,
+      "maximum_blocked_score": 0.8
+    }
+  },
+  "by_expected_presence": {
+    "broad_negative": {
+      "count": 2,
+      "mean_blocked_score": 0.39999999999999997,
+      "minimum_blocked_score": 0.1,
+      "maximum_blocked_score": 0.7
+    },
+    "positive": {
+      "count": 2,
+      "mean_blocked_score": 0.5,
+      "minimum_blocked_score": 0.2,
+      "maximum_blocked_score": 0.8
+    }
+  },
+  "detector_confidence_deciles": [
+    {
+      "lower": 0.0,
+      "upper": 0.1,
+      "count": 1,
+      "detector_miss_count": 1,
+      "mean_confidence": 0.05,
+      "mean_absolute_pixel_area": 100.0,
+      "mean_relative_image_area": 0.01,
+      "mean_blocked_score": 0.2,
+      "positive_count": 1,
+      "negative_count": 0
+    },
+    {
+      "lower": 0.1,
+      "upper": 0.2,
+      "count": 0,
+      "detector_miss_count": 0,
+      "mean_confidence": null,
+      "mean_absolute_pixel_area": null,
+      "mean_relative_image_area": null,
+      "mean_blocked_score": null,
+      "positive_count": 0,
+      "negative_count": 0
+    },
+    {
+      "lower": 0.2,
+      "upper": 0.3,
+      "count": 1,
+      "detector_miss_count": 0,
+      "mean_confidence": 0.25,
+      "mean_absolute_pixel_area": 400.0,
+      "mean_relative_image_area": 0.04,
+      "mean_blocked_score": 0.7,
+      "positive_count": 0,
+      "negative_count": 1
+    },
+    {
+      "lower": 0.3,
+      "upper": 0.4,
+      "count": 0,
+      "detector_miss_count": 0,
+      "mean_confidence": null,
+      "mean_absolute_pixel_area": null,
+      "mean_relative_image_area": null,
+      "mean_blocked_score": null,
+      "positive_count": 0,
+      "negative_count": 0
+    },
+    {
+      "lower": 0.4,
+      "upper": 0.5,
+      "count": 0,
+      "detector_miss_count": 0,
+      "mean_confidence": null,
+      "mean_absolute_pixel_area": null,
+      "mean_relative_image_area": null,
+      "mean_blocked_score": null,
+      "positive_count": 0,
+      "negative_count": 0
+    },
+    {
+      "lower": 0.5,
+      "upper": 0.6,
+      "count": 0,
+      "detector_miss_count": 0,
+      "mean_confidence": null,
+      "mean_absolute_pixel_area": null,
+      "mean_relative_image_area": null,
+      "mean_blocked_score": null,
+      "positive_count": 0,
+      "negative_count": 0
+    },
+    {
+      "lower": 0.6,
+      "upper": 0.7,
+      "count": 0,
+      "detector_miss_count": 0,
+      "mean_confidence": null,
+      "mean_absolute_pixel_area": null,
+      "mean_relative_image_area": null,
+      "mean_blocked_score": null,
+      "positive_count": 0,
+      "negative_count": 0
+    },
+    {
+      "lower": 0.7,
+      "upper": 0.8,
+      "count": 0,
+      "detector_miss_count": 0,
+      "mean_confidence": null,
+      "mean_absolute_pixel_area": null,
+      "mean_relative_image_area": null,
+      "mean_blocked_score": null,
+      "positive_count": 0,
+      "negative_count": 0
+    },
+    {
+      "lower": 0.8,
+      "upper": 0.9,
+      "count": 0,
+      "detector_miss_count": 0,
+      "mean_confidence": null,
+      "mean_absolute_pixel_area": null,
+      "mean_relative_image_area": null,
+      "mean_blocked_score": null,
+      "positive_count": 0,
+      "negative_count": 0
+    },
+    {
+      "lower": 0.9,
+      "upper": 1.0,
+      "count": 1,
+      "detector_miss_count": 0,
+      "mean_confidence": 0.95,
+      "mean_absolute_pixel_area": 2500.0,
+      "mean_relative_image_area": 0.25,
+      "mean_blocked_score": 0.8,
+      "positive_count": 1,
+      "negative_count": 0
+    }
+  ],
+  "top_box_area_bins": {
+    "absolute_pixel_area": [
+      {
+        "lower": 0.0,
+        "upper": 100.0,
+        "count": 0,
+        "positive_count": 0,
+        "negative_count": 0,
+        "mean_blocked_score": null
+      },
+      {
+        "lower": 100.0,
+        "upper": 1000.0,
+        "count": 2,
+        "positive_count": 1,
+        "negative_count": 1,
+        "mean_blocked_score": 0.44999999999999996
+      },
+      {
+        "lower": 1000.0,
+        "upper": 10000.0,
+        "count": 1,
+        "positive_count": 1,
+        "negative_count": 0,
+        "mean_blocked_score": 0.8
+      },
+      {
+        "lower": 10000.0,
+        "upper": 100000.0,
+        "count": 0,
+        "positive_count": 0,
+        "negative_count": 0,
+        "mean_blocked_score": null
+      },
+      {
+        "lower": 100000.0,
+        "upper": 1000000.0,
+        "count": 0,
+        "positive_count": 0,
+        "negative_count": 0,
+        "mean_blocked_score": null
+      },
+      {
+        "lower": 1000000.0,
+        "upper": null,
+        "count": 0,
+        "positive_count": 0,
+        "negative_count": 0,
+        "mean_blocked_score": null
+      }
+    ],
+    "relative_image_area": [
+      {
+        "lower": 0.0,
+        "upper": 0.01,
+        "count": 0,
+        "positive_count": 0,
+        "negative_count": 0,
+        "mean_blocked_score": null
+      },
+      {
+        "lower": 0.01,
+        "upper": 0.05,
+        "count": 2,
+        "positive_count": 1,
+        "negative_count": 1,
+        "mean_blocked_score": 0.44999999999999996
+      },
+      {
+        "lower": 0.05,
+        "upper": 0.1,
+        "count": 0,
+        "positive_count": 0,
+        "negative_count": 0,
+        "mean_blocked_score": null
+      },
+      {
+        "lower": 0.1,
+        "upper": 0.2,
+        "count": 0,
+        "positive_count": 0,
+        "negative_count": 0,
+        "mean_blocked_score": null
+      },
+      {
+        "lower": 0.2,
+        "upper": 0.4,
+        "count": 1,
+        "positive_count": 1,
+        "negative_count": 0,
+        "mean_blocked_score": 0.8
+      },
+      {
+        "lower": 0.4,
+        "upper": 0.6,
+        "count": 0,
+        "positive_count": 0,
+        "negative_count": 0,
+        "mean_blocked_score": null
+      },
+      {
+        "lower": 0.6,
+        "upper": 0.8,
+        "count": 0,
+        "positive_count": 0,
+        "negative_count": 0,
+        "mean_blocked_score": null
+      },
+      {
+        "lower": 0.8,
+        "upper": 1.0,
+        "count": 0,
+        "positive_count": 0,
+        "negative_count": 0,
+        "mean_blocked_score": null
+      },
+      {
+        "lower": 1.0,
+        "upper": null,
+        "count": 0,
+        "positive_count": 0,
+        "negative_count": 0,
+        "mean_blocked_score": null
+      }
+    ],
+    "detector_miss_count": 1
+  }
+}

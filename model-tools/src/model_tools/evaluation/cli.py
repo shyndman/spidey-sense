@@ -1,4 +1,4 @@
-"""Typed command-line orchestration for the container-only evaluation pipeline."""
+"""Command-line parser and output serialization for evaluation."""
 
 from __future__ import annotations
 
@@ -7,134 +7,67 @@ import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal, cast
+from typing import cast
 
-from .contracts import StageSummary
-from .paths import EvaluationPaths
-
-CommandName = Literal["acquire", "annotate", "score", "report", "all"]
+from .application import (
+    SingleStageCommand,
+    StageExecution,
+    run_all,
+    run_stage,
+)
+from .reporting.models import EvaluationReports
+from .storage.layout import EvaluationPaths
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the five-command evaluator parser with a volume-root default."""
+    """Build the five-command evaluation CLI and its data-directory options.
 
+    The ``acquire``, ``annotate``, ``score``, ``report``, and ``all`` commands
+    share a default data directory, with command-local options able to
+    override it.
+    """
     parser = argparse.ArgumentParser(prog="model-tools-evaluation")
     _ = parser.add_argument(
-        "--data-dir",
-        type=Path,
-        default=Path("/data"),
-        dest="data_dir",
+        "--data-dir", type=Path, default=Path("/data"), dest="data_dir"
     )
     commands = parser.add_subparsers(dest="command", required=True)
     for command_name in ("acquire", "annotate", "score", "report", "all"):
         command = commands.add_parser(command_name)
-        # Suppress this default so a global --data-dir remains effective while
-        # also accepting the ergonomic `command --data-dir /data` spelling.
         _ = command.add_argument(
-            "--data-dir",
-            type=Path,
-            default=argparse.SUPPRESS,
-            dest="data_dir",
+            "--data-dir", type=Path, default=argparse.SUPPRESS, dest="data_dir"
         )
     return parser
 
 
-def _summary_payload(stage: str, summary: StageSummary) -> dict[str, object]:
-    return {"stage": stage, "summary": summary.model_dump(mode="json")}
-
-
 def _emit(payload: object) -> None:
-    """Emit one aggregate JSON value and never stage-level sample details."""
-
     _ = sys.stdout.write(
-        json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            allow_nan=False,
-        )
-        + "\n"
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, allow_nan=False) + "\n"
     )
 
 
-def _run_score_model(paths: EvaluationPaths, model_id: str) -> StageSummary:
-    """Score one isolated registered model in the validation process."""
-
-    from .scoring import score_model
-
-    return score_model(paths, model_id)
-
-
-def _run_score(paths: EvaluationPaths) -> StageSummary:
-    """Score every registered model and combine only aggregate counters."""
-
-    from .model_bundle import registered_model_ids
-
-    summaries = [
-        _run_score_model(paths, model_id) for model_id in registered_model_ids(paths)
-    ]
-    return StageSummary(
-        attempted=sum(summary.attempted for summary in summaries),
-        completed=sum(summary.completed for summary in summaries),
-        skipped=sum(summary.skipped for summary in summaries),
-        failed=sum(summary.failed for summary in summaries),
-    )
-
-
-def _run_named(
-    command: CommandName,
-    paths: EvaluationPaths,
-) -> StageSummary | dict[str, object]:
-    """Lazy-load one stage implementation and execute it for the data root."""
-
-    if command == "acquire":
-        from .acquisition import acquire
-
-        return acquire(paths)
-    if command == "annotate":
-        from .annotation import annotate
-
-        return annotate(paths)
-    if command == "score":
-        return _run_score(paths)
-    if command == "report":
-        from .reporting import report
-
-        return report(paths)
-    raise ValueError(f"unsupported single stage: {command}")
-
-
-def _run_all(paths: EvaluationPaths) -> tuple[dict[str, object], int]:
-    """Run stages in order and stop before the next stage after any failures."""
-
-    summaries: dict[str, object] = {}
-    for stage in ("acquire", "annotate", "score"):
-        result = cast(StageSummary, _run_named(cast(CommandName, stage), paths))
-        summaries[stage] = result.model_dump(mode="json")
-        if result.failed:
-            return {"stages": summaries}, 1
-    from .reporting import report
-
-    summaries["report"] = report(paths)
-    return {"stages": summaries}, 0
+def _payload(result: StageExecution | EvaluationReports) -> object:
+    return result.model_dump(mode="json")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Dispatch one evaluator command and return a process exit status."""
+    """Execute a selected stage or the ordered aggregate and write one JSON
+    line to stdout.
 
+    Single-stage commands return status one only for failed stage summaries;
+    ``all`` writes the aggregate result and returns its orchestration status.
+    """
     namespace = build_parser().parse_args(argv)
-    command = cast(CommandName, namespace.command)
-    paths = EvaluationPaths(cast(Path, namespace.data_dir))
+    paths = EvaluationPaths(root=cast(Path, namespace.data_dir))
     paths.ensure()
+    command = cast(str, namespace.command)
     if command == "all":
-        payload, status = _run_all(paths)
-        _emit(payload)
+        result, status = run_all(paths)
+        _emit(result.model_dump(mode="json"))
         return status
-    result = _run_named(command, paths)
-    if isinstance(result, StageSummary):
-        _emit(_summary_payload(command, result))
-        return 1 if result.failed else 0
-    _emit(result)
+    stage = run_stage(cast(SingleStageCommand, command), paths)
+    _emit(_payload(stage))
+    if isinstance(stage, StageExecution):
+        return 1 if stage.summary.failed else 0
     return 0
 
 
